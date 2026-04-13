@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -20,6 +21,8 @@ func ResumeInNewTab(sessionID, projectPath string) error {
 	cmd := buildResumeCommand(sessionID, projectPath)
 
 	switch detectTerminal() {
+	case "warp":
+		return openWarpTab(cmd)
 	case "iterm2":
 		return openITerm2Tab(cmd)
 	case "tmux":
@@ -40,6 +43,11 @@ func CopyResumeCommand(sessionID string) error {
 	return clipboard.WriteAll(cmd)
 }
 
+// DetectedTerminal returns the name of the detected terminal for display.
+func DetectedTerminal() string {
+	return detectTerminal()
+}
+
 func buildResumeCommand(sessionID, projectPath string) string {
 	if projectPath != "" {
 		return fmt.Sprintf("cd %q && claude --resume %s", projectPath, sessionID)
@@ -48,6 +56,9 @@ func buildResumeCommand(sessionID, projectPath string) string {
 }
 
 func detectTerminal() string {
+	if os.Getenv("TERM_PROGRAM") == "WarpTerminal" {
+		return "warp"
+	}
 	if os.Getenv("ITERM_SESSION_ID") != "" {
 		return "iterm2"
 	}
@@ -58,6 +69,11 @@ func detectTerminal() string {
 		return "terminal"
 	}
 	return "unknown"
+}
+
+func openWarpTab(command string) error {
+	u := fmt.Sprintf("warp://action/new_tab?command=%s", url.QueryEscape(command))
+	return exec.Command("open", u).Run()
 }
 
 func openITerm2Tab(command string) error {

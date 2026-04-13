@@ -410,7 +410,9 @@ func (a *App) View() string {
 
 	// Header
 	sessionCount := len(a.filtered)
-	header := headerStyle.Render(fmt.Sprintf("ClaudeLens v0.1  %d sessions", sessionCount))
+	termName := terminal.DetectedTerminal()
+	header := headerStyle.Render(fmt.Sprintf("ClaudeLens v0.1")) +
+		dimStyle.Render(fmt.Sprintf("  %d sessions · %s", sessionCount, termName))
 	header = lipgloss.PlaceHorizontal(a.width, lipgloss.Left, header)
 
 	// Search bar
