@@ -1,0 +1,43 @@
+# Binaries
+claudelens
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output
+*.out
+dist/
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Secrets — never commit these
+.env
+.env.*
+*.key
+*.pem
+*.p12
+credentials*
+secret*
+token*
+
+# Claude Code local state
+.claude/
