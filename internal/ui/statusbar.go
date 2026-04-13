@@ -3,12 +3,31 @@ package ui
 import (
 	"fmt"
 
+	"github.com/KaushalDokania/claudelens/internal/data"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// renderStatusBar renders the bottom key hints bar.
-func renderStatusBar(width int, claudeMemAvailable bool, semanticEnabled bool, sessionCount int) string {
-	left := statusBarStyle.Render("↑↓ Navigate  Enter Resume  c Copy  / Search  ? Help  q Quit")
+// renderStatusBar renders a 2-line status bar:
+// Line 1: resume command for selected session
+// Line 2: key hints and session count
+func renderStatusBar(width int, session *data.Session, claudeMemAvailable bool, semanticEnabled bool, sessionCount int, focusedPane Pane) string {
+	// Line 1: Resume command for selected session
+	var cmdLine string
+	if session != nil {
+		cmd := fmt.Sprintf("claude --resume %s", session.SessionID)
+		cmdLine = lipgloss.NewStyle().Foreground(accentColor).Render("  > " + cmd)
+	} else {
+		cmdLine = dimStyle.Render("  Select a session to see resume command")
+	}
+
+	// Line 2: Key hints
+	var hints string
+	if focusedPane == PaneSearch {
+		hints = "  Type to search · Enter confirm · Esc clear"
+	} else {
+		hints = "  ↑↓/jk Navigate · Enter Resume · c Copy · / Search · s Semantic · ? Help · q Quit"
+	}
+	left := dimStyle.Render(hints)
 
 	memStatus := ""
 	if claudeMemAvailable {
@@ -33,5 +52,7 @@ func renderStatusBar(width int, claudeMemAvailable bool, semanticEnabled bool, s
 		padding += " "
 	}
 
-	return left + padding + right
+	keysLine := left + padding + right
+
+	return cmdLine + "\n" + keysLine
 }

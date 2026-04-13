@@ -398,10 +398,10 @@ func (a *App) View() string {
 		return a.renderHelp()
 	}
 
-	// Layout: header + search + (list | preview) + status bar
+	// Layout: header + search + (list | preview) + status bar (2 lines)
 	headerHeight := 1
 	searchHeight := 1
-	statusHeight := 1
+	statusHeight := 2
 	contentHeight := a.height - headerHeight - searchHeight - statusHeight - 4 // borders
 
 	if contentHeight < 3 {
@@ -455,11 +455,12 @@ func (a *App) View() string {
 	if len(a.memSessions) > 0 {
 		totalCount += len(a.memSessions)
 	}
+	selectedSession := sessionAtCursor(a.filtered, a.memSessions, a.cursor)
 	var status string
 	if a.statusMsg != "" {
-		status = statusBarStyle.Render(a.statusMsg)
+		status = statusBarStyle.Render("  "+a.statusMsg) + "\n" + dimStyle.Render("  ↑↓ Navigate · Enter Resume · c Copy · / Search · q Quit")
 	} else {
-		status = renderStatusBar(a.width, a.memAvailable, a.semEnabled, totalCount)
+		status = renderStatusBar(a.width, selectedSession, a.memAvailable, a.semEnabled, totalCount, a.focusedPane)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, searchLine, content, status)

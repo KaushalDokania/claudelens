@@ -25,7 +25,7 @@ func renderSessionList(sessions []data.Session, memSessions []data.Session, curs
 
 	for i, s := range sessions {
 		items = append(items, listItem{
-			lines:    renderSessionItem(s, i == cursor, width),
+			lines:    renderSessionItem(s, i == cursor, width, i+1),
 			isCursor: i == cursor,
 		})
 	}
@@ -37,7 +37,7 @@ func renderSessionList(sessions []data.Session, memSessions []data.Session, curs
 		for i, s := range memSessions {
 			memCursorIdx := len(sessions) + 1 + i
 			items = append(items, listItem{
-				lines:    renderSessionItem(s, memCursorIdx == cursor, width),
+				lines:    renderSessionItem(s, memCursorIdx == cursor, width, len(sessions)+i+1),
 				isCursor: memCursorIdx == cursor,
 			})
 		}
@@ -83,31 +83,35 @@ func renderSessionList(sessions []data.Session, memSessions []data.Session, curs
 	return strings.Join(visible, "\n")
 }
 
-// renderSessionItem renders a single session entry (2 lines).
-func renderSessionItem(s data.Session, selected bool, width int) string {
+// renderSessionItem renders a single session entry (2 lines) with a number prefix.
+func renderSessionItem(s data.Session, selected bool, width int, number int) string {
+	numPrefix := fmt.Sprintf("%3d. ", number)
+	indent := "     " // same width as "  1. "
+
 	title := s.DisplayTitle()
-	if len(title) > width-4 {
-		title = title[:width-7] + "..."
+	maxTitle := width - len(numPrefix) - 2
+	if maxTitle > 0 && len(title) > maxTitle {
+		title = title[:maxTitle-3] + "..."
 	}
 
-	meta := fmt.Sprintf("%s · %s · %d msgs",
+	meta := fmt.Sprintf("%s · %s · ~%d msgs",
 		s.ShortProject(), s.RelativeTime(), s.MessageCount)
-	if s.GitBranch != "" {
+	if s.GitBranch != "" && s.GitBranch != "HEAD" {
 		meta += " · " + s.GitBranch
 	}
-	if len(meta) > width-4 {
-		meta = meta[:width-7] + "..."
+	maxMeta := width - len(indent) - 2
+	if maxMeta > 0 && len(meta) > maxMeta {
+		meta = meta[:maxMeta-3] + "..."
 	}
 
 	if selected {
-		indicator := "▸ "
-		titleLine := selectedStyle.Render(indicator + title)
-		metaLine := selectedDimStyle.Render("  " + meta)
+		titleLine := selectedStyle.Render(numPrefix + title)
+		metaLine := selectedDimStyle.Render(indent + meta)
 		return titleLine + "\n" + metaLine
 	}
 
-	titleLine := normalStyle.Render("  " + title)
-	metaLine := dimStyle.Render("  " + meta)
+	titleLine := normalStyle.Render(numPrefix + title)
+	metaLine := dimStyle.Render(indent + meta)
 	return titleLine + "\n" + metaLine
 }
 

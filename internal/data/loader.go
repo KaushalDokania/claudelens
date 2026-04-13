@@ -137,8 +137,6 @@ func loadFromJSONLFiles(claudeDir string, namesByID map[string]string) []Session
 			continue
 		}
 
-		projectPath := decodeProjectDirName(pd.Name())
-
 		for _, jsonlPath := range jsonlFiles {
 			base := filepath.Base(jsonlPath)
 			sessionID := strings.TrimSuffix(base, ".jsonl")
@@ -154,12 +152,10 @@ func loadFromJSONLFiles(claudeDir string, namesByID map[string]string) []Session
 			}
 
 			s := Session{
-				SessionID:   sessionID,
-				FullPath:    jsonlPath,
-				ProjectPath: projectPath,
-				Project:     extractProjectName(projectPath),
-				Modified:    info.ModTime(),
-				Source:      "jsonl",
+				SessionID: sessionID,
+				FullPath:  jsonlPath,
+				Modified:  info.ModTime(),
+				Source:    "jsonl",
 			}
 
 			if name, ok := namesByID[sessionID]; ok {
@@ -182,6 +178,7 @@ type jsonlMetaLine struct {
 	SessionID string `json:"sessionId"`
 	Timestamp string `json:"timestamp"`
 	GitBranch string `json:"gitBranch"`
+	CWD       string `json:"cwd"`
 	Message   struct {
 		Role    string          `json:"role"`
 		Content json.RawMessage `json:"content"`
@@ -189,7 +186,7 @@ type jsonlMetaLine struct {
 }
 
 // extractJSONLMetadata reads the first few lines of a JSONL file to extract
-// summary, first prompt, message count estimate, and creation time.
+// cwd (project path), first prompt, git branch, timestamps, and message count.
 func extractJSONLMetadata(path string, s *Session) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -201,7 +198,7 @@ func extractJSONLMetadata(path string, s *Session) {
 	scanner.Buffer(make([]byte, 0, 256*1024), 2*1024*1024)
 
 	lineCount := 0
-	maxScanLines := 30 // Only read first 30 lines for speed
+	maxScanLines := 30
 
 	for scanner.Scan() && lineCount < maxScanLines {
 		lineCount++
@@ -213,6 +210,12 @@ func extractJSONLMetadata(path string, s *Session) {
 		var entry jsonlMetaLine
 		if err := json.Unmarshal(line, &entry); err != nil {
 			continue
+		}
+
+		// Extract cwd (the real project path) — typically on line 2
+		if s.ProjectPath == "" && entry.CWD != "" {
+			s.ProjectPath = entry.CWD
+			s.Project = extractProjectName(entry.CWD)
 		}
 
 		// Set creation time from first timestamped entry
@@ -279,49 +282,12 @@ func extractTextFromContent(raw json.RawMessage) string {
 	return ""
 }
 
-// decodeProjectDirName converts a Claude Code project directory name back to
-// the original path. Claude encodes paths like "/Users/kaushal/workspace" as
-// "-Users-kaushal-workspace".
-func decodeProjectDirName(dirName string) string {
-	if dirName == "" {
-		return ""
-	}
-	// Replace leading dash with /
-	path := "/" + strings.TrimPrefix(dirName, "-")
-	// Replace remaining dashes with /
-	// But be careful: multi-word directory names use dashes too.
-	// Claude uses dashes for path separators, so we reconstruct by
-	// checking which path actually exists on disk.
-	parts := strings.Split(strings.TrimPrefix(dirName, "-"), "-")
-	reconstructed := "/" + parts[0]
-	for i := 1; i < len(parts); i++ {
-		withSep := reconstructed + "/" + parts[i]
-		withDash := reconstructed + "-" + parts[i]
-		if dirExists(withSep) {
-			reconstructed = withSep
-		} else if dirExists(withDash) {
-			reconstructed = withDash
-		} else {
-			// Default to path separator
-			reconstructed = withSep
-		}
-	}
-
-	_ = path
-	return reconstructed
-}
-
 // isInternalProjectDir returns true for project directories that contain
 // internal/plugin sessions (not user-initiated conversations).
 func isInternalProjectDir(name string) bool {
 	lower := strings.ToLower(name)
 	return strings.Contains(lower, "observer-sessions") ||
 		strings.Contains(lower, "claude-mem")
-}
-
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
 }
 
 // loadFromIndexFiles reads all sessions-index.json files under the projects
