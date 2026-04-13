@@ -2,10 +2,10 @@ package terminal
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
+	"time"
 
 	"github.com/atotto/clipboard"
 )
@@ -15,25 +15,20 @@ import (
 // detection fails.
 func ResumeInNewTab(sessionID, projectPath string) error {
 	if runtime.GOOS != "darwin" {
-		return CopyResumeCommand(sessionID)
+		return fmt.Errorf("new tab not supported on %s", runtime.GOOS)
 	}
-
-	cmd := BuildResumeCommand(sessionID, projectPath)
 
 	switch detectTerminal() {
 	case "warp":
-		return openWarpTab(cmd)
+		return openWarpTab(sessionID, projectPath)
 	case "iterm2":
-		return openITerm2Tab(cmd)
+		return openITerm2Tab(sessionID, projectPath)
 	case "tmux":
-		return openTmuxWindow(cmd, projectPath)
+		return openTmuxWindow(sessionID, projectPath)
 	case "terminal":
-		return openTerminalAppTab(cmd)
+		return openTerminalAppTab(sessionID, projectPath)
 	default:
-		if err := CopyResumeCommand(sessionID); err != nil {
-			return err
-		}
-		return fmt.Errorf("unknown terminal, command copied to clipboard")
+		return fmt.Errorf("unsupported terminal")
 	}
 }
 
@@ -43,17 +38,17 @@ func CopyResumeCommand(sessionID string) error {
 	return clipboard.WriteAll(cmd)
 }
 
-// DetectedTerminal returns the name of the detected terminal for display.
-func DetectedTerminal() string {
-	return detectTerminal()
-}
-
 // BuildResumeCommand creates the full cd + claude --resume command string.
 func BuildResumeCommand(sessionID, projectPath string) string {
 	if projectPath != "" {
 		return fmt.Sprintf("cd %q && claude --resume %s", projectPath, sessionID)
 	}
 	return fmt.Sprintf("claude --resume %s", sessionID)
+}
+
+// DetectedTerminal returns the name of the detected terminal for display.
+func DetectedTerminal() string {
+	return detectTerminal()
 }
 
 func detectTerminal() string {
@@ -72,17 +67,48 @@ func detectTerminal() string {
 	return "unknown"
 }
 
-func openWarpTab(command string) error {
-	u := fmt.Sprintf("warp://action/new_tab?command=%s", url.QueryEscape(command))
-	return exec.Command("open", u).Run()
+func openWarpTab(sessionID, projectPath string) error {
+	// Warp URL scheme: open new tab, then send the command
+	// First open a new tab
+	err := exec.Command("open", "warp://action/new_tab").Run()
+	if err != nil {
+		return err
+	}
+	// Give Warp a moment to create the tab
+	time.Sleep(500 * time.Millisecond)
+
+	// Use AppleScript to type the command in the new Warp tab
+	var command string
+	if projectPath != "" {
+		command = fmt.Sprintf("cd '%s' && claude --resume %s", projectPath, sessionID)
+	} else {
+		command = fmt.Sprintf("claude --resume %s", sessionID)
+	}
+
+	script := fmt.Sprintf(`tell application "System Events"
+	tell process "Warp"
+		keystroke "%s"
+		key code 36
+	end tell
+end tell`, command)
+
+	return exec.Command("osascript", "-e", script).Run()
 }
 
-func openITerm2Tab(command string) error {
+func openITerm2Tab(sessionID, projectPath string) error {
+	// Build command with single quotes to avoid AppleScript escaping issues
+	var command string
+	if projectPath != "" {
+		command = fmt.Sprintf("cd '%s' && claude --resume %s", projectPath, sessionID)
+	} else {
+		command = fmt.Sprintf("claude --resume %s", sessionID)
+	}
+
 	script := fmt.Sprintf(`tell application "iTerm2"
 	tell current window
 		create tab with default profile
 		tell current session
-			write text %q
+			write text "%s"
 		end tell
 	end tell
 end tell`, command)
@@ -90,16 +116,24 @@ end tell`, command)
 	return exec.Command("osascript", "-e", script).Run()
 }
 
-func openTerminalAppTab(command string) error {
+func openTerminalAppTab(sessionID, projectPath string) error {
+	var command string
+	if projectPath != "" {
+		command = fmt.Sprintf("cd '%s' && claude --resume %s", projectPath, sessionID)
+	} else {
+		command = fmt.Sprintf("claude --resume %s", sessionID)
+	}
+
 	script := fmt.Sprintf(`tell application "Terminal"
 	activate
-	do script %q
+	do script "%s"
 end tell`, command)
 
 	return exec.Command("osascript", "-e", script).Run()
 }
 
-func openTmuxWindow(command, projectPath string) error {
+func openTmuxWindow(sessionID, projectPath string) error {
+	command := fmt.Sprintf("claude --resume %s", sessionID)
 	args := []string{"new-window"}
 	if projectPath != "" {
 		args = append(args, "-c", projectPath)
