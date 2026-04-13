@@ -26,8 +26,20 @@ func main() {
 	app := ui.NewApp(*claudeDir, *memURL, *search)
 	p := tea.NewProgram(app, tea.WithAltScreen())
 
-	if _, err := p.Run(); err != nil {
+	model, err := p.Run()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// If user selected a session to resume, print the command after TUI exits
+	if a, ok := model.(*ui.App); ok && a.ResumeCmd != "" {
+		fmt.Println()
+		fmt.Println("  Run this command to resume your session:")
+		fmt.Println()
+		fmt.Printf("    %s\n", a.ResumeCmd)
+		fmt.Println()
+		fmt.Println("  (also copied to clipboard)")
+		fmt.Println()
 	}
 }

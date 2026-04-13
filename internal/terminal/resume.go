@@ -18,7 +18,7 @@ func ResumeInNewTab(sessionID, projectPath string) error {
 		return CopyResumeCommand(sessionID)
 	}
 
-	cmd := buildResumeCommand(sessionID, projectPath)
+	cmd := BuildResumeCommand(sessionID, projectPath)
 
 	switch detectTerminal() {
 	case "warp":
@@ -48,7 +48,8 @@ func DetectedTerminal() string {
 	return detectTerminal()
 }
 
-func buildResumeCommand(sessionID, projectPath string) string {
+// BuildResumeCommand creates the full cd + claude --resume command string.
+func BuildResumeCommand(sessionID, projectPath string) string {
 	if projectPath != "" {
 		return fmt.Sprintf("cd %q && claude --resume %s", projectPath, sessionID)
 	}
