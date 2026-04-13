@@ -7,6 +7,7 @@ import (
 
 	"github.com/KaushalDokania/claudelens/internal/terminal"
 	"github.com/KaushalDokania/claudelens/internal/ui"
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -50,6 +51,6 @@ func main() {
 	}
 
 	// Fallback for Warp and unsupported terminals: print + clipboard
-	_ = terminal.CopyResumeCommand(a.ResumeSessionID)
+	_ = clipboard.WriteAll(cmd)
 	fmt.Printf("\n  Paste (Cmd+V) and run:\n\n    %s\n\n", cmd)
 }
