@@ -9,66 +9,78 @@ import (
 )
 
 // renderSessionList renders the left pane showing the session list.
+// Each session item is 2 lines (title + metadata). Scrolling is line-aware.
 func renderSessionList(sessions []data.Session, memSessions []data.Session, cursor int, width, height int) string {
 	if len(sessions) == 0 && len(memSessions) == 0 {
 		msg := dimStyle.Render("No sessions found.\nStart a Claude Code session first.")
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, msg)
 	}
 
-	var lines []string
-	totalItems := len(sessions) + len(memSessions)
-	if len(memSessions) > 0 {
-		totalItems++ // for the separator line
+	// Build all items as rendered line-pairs
+	type listItem struct {
+		lines    string // Rendered content (may be 1 or 2 lines)
+		isCursor bool
 	}
+	var items []listItem
 
-	// Determine visible window (scrolling)
-	maxVisible := height
-	scrollStart := 0
-	if cursor >= maxVisible {
-		scrollStart = cursor - maxVisible + 1
-	}
-
-	itemIdx := 0
 	for i, s := range sessions {
-		if itemIdx >= scrollStart+maxVisible {
-			break
-		}
-		if itemIdx >= scrollStart {
-			lines = append(lines, renderSessionItem(s, i == cursor, width))
-		}
-		itemIdx++
+		items = append(items, listItem{
+			lines:    renderSessionItem(s, i == cursor, width),
+			isCursor: i == cursor,
+		})
 	}
 
-	// claude-mem separator and results
 	if len(memSessions) > 0 {
-		if itemIdx >= scrollStart && itemIdx < scrollStart+maxVisible {
-			sep := separatorStyle.Render(fmt.Sprintf("── claude-mem (%d) ", len(memSessions)) + strings.Repeat("─", width/2))
-			if len(sep) > width {
-				sep = sep[:width]
-			}
-			lines = append(lines, sep)
-		}
-		itemIdx++
+		sep := separatorStyle.Render(fmt.Sprintf("── claude-mem (%d) ", len(memSessions)) + strings.Repeat("─", width/2))
+		items = append(items, listItem{lines: sep})
 
 		for i, s := range memSessions {
-			if itemIdx >= scrollStart+maxVisible {
-				break
-			}
-			memCursorIdx := len(sessions) + 1 + i // +1 for separator
-			if itemIdx >= scrollStart {
-				lines = append(lines, renderSessionItem(s, memCursorIdx == cursor, width))
-			}
-			itemIdx++
+			memCursorIdx := len(sessions) + 1 + i
+			items = append(items, listItem{
+				lines:    renderSessionItem(s, memCursorIdx == cursor, width),
+				isCursor: memCursorIdx == cursor,
+			})
 		}
 	}
 
-	// Pad remaining height
-	for len(lines) < maxVisible {
-		lines = append(lines, "")
+	// Flatten items into lines, tracking which line range is the cursor
+	var allLines []string
+	cursorLineStart := 0
+	cursorLineEnd := 0
+	lineCount := 0
+
+	for _, item := range items {
+		itemLines := strings.Split(item.lines, "\n")
+		if item.isCursor {
+			cursorLineStart = lineCount
+			cursorLineEnd = lineCount + len(itemLines)
+		}
+		allLines = append(allLines, itemLines...)
+		lineCount += len(itemLines)
 	}
 
-	_ = totalItems
-	return strings.Join(lines[:maxVisible], "\n")
+	// Scroll so cursor item is visible
+	scrollStart := 0
+	if cursorLineEnd > height {
+		scrollStart = cursorLineEnd - height
+	}
+	if cursorLineStart < scrollStart {
+		scrollStart = cursorLineStart
+	}
+
+	// Extract visible window
+	visibleEnd := scrollStart + height
+	if visibleEnd > len(allLines) {
+		visibleEnd = len(allLines)
+	}
+	visible := allLines[scrollStart:visibleEnd]
+
+	// Pad to fill height
+	for len(visible) < height {
+		visible = append(visible, "")
+	}
+
+	return strings.Join(visible, "\n")
 }
 
 // renderSessionItem renders a single session entry (2 lines).

@@ -69,9 +69,9 @@ type previewLoadedMsg struct {
 type statusClearMsg struct{}
 
 // NewApp creates the initial App model.
-func NewApp(claudeDir, memURL, initialSearch string) App {
+func NewApp(claudeDir, memURL, initialSearch string) *App {
 	memClient := data.NewClaudeMemClient(memURL)
-	return App{
+	return &App{
 		claudeDir:   claudeDir,
 		memClient:   memClient,
 		focusedPane: PaneList,
@@ -80,7 +80,7 @@ func NewApp(claudeDir, memURL, initialSearch string) App {
 }
 
 // Init loads sessions on startup.
-func (a App) Init() tea.Cmd {
+func (a *App) Init() tea.Cmd {
 	return tea.Batch(
 		loadSessionsCmd(a.claudeDir),
 		checkMemCmd(a.memClient),
@@ -126,7 +126,7 @@ func loadPreviewCmd(path, sessionID string) tea.Cmd {
 }
 
 // Update handles all messages.
-func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
@@ -175,7 +175,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	// Global keys
@@ -234,7 +234,7 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-func (a App) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (a *App) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	switch key {
 	case "enter":
@@ -275,7 +275,7 @@ func (a App) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-func (a App) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (a *App) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	total := totalItems(a.filtered, a.memSessions)
 
@@ -320,9 +320,14 @@ func (a *App) applyFilter() {
 	}
 }
 
-func (a App) loadPreviewForCursor() tea.Cmd {
+// loadPreviewForCursor updates preview state and returns a Cmd to load the
+// conversation. Must be called on a pointer receiver so previewID is persisted.
+func (a *App) loadPreviewForCursor() tea.Cmd {
 	s := sessionAtCursor(a.filtered, a.memSessions, a.cursor)
 	if s == nil || s.FullPath == "" {
+		a.previewReady = false
+		a.previewErr = ""
+		a.preview = nil
 		return nil
 	}
 	if s.SessionID == a.previewID {
@@ -330,10 +335,11 @@ func (a App) loadPreviewForCursor() tea.Cmd {
 	}
 	a.previewID = s.SessionID
 	a.previewReady = false
+	a.previewErr = ""
 	return loadPreviewCmd(s.FullPath, s.SessionID)
 }
 
-func (a App) resumeSession() tea.Cmd {
+func (a *App) resumeSession() tea.Cmd {
 	s := sessionAtCursor(a.filtered, a.memSessions, a.cursor)
 	if s == nil {
 		return nil
@@ -349,7 +355,7 @@ func (a App) resumeSession() tea.Cmd {
 	}
 }
 
-func (a App) copyResumeCommand() tea.Cmd {
+func (a *App) copyResumeCommand() tea.Cmd {
 	s := sessionAtCursor(a.filtered, a.memSessions, a.cursor)
 	if s == nil {
 		return nil
@@ -375,7 +381,7 @@ func clearStatusAfter(d time.Duration) tea.Cmd {
 }
 
 // View renders the entire UI.
-func (a App) View() string {
+func (a *App) View() string {
 	if a.width == 0 {
 		return "Loading..."
 	}
@@ -452,7 +458,7 @@ func (a App) View() string {
 }
 
 // renderPreview renders the right pane with conversation preview.
-func (a App) renderPreview(width, height int) string {
+func (a *App) renderPreview(width, height int) string {
 	s := sessionAtCursor(a.filtered, a.memSessions, a.cursor)
 	if s == nil {
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
@@ -510,7 +516,7 @@ func (a App) renderPreview(width, height int) string {
 }
 
 // renderHelp renders the help overlay.
-func (a App) renderHelp() string {
+func (a *App) renderHelp() string {
 	help := `
   ClaudeLens — Key Bindings
 
