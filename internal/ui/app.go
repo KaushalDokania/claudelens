@@ -35,10 +35,12 @@ type App struct {
 	width       int
 	height      int
 
-	preview      []data.ConversationMessage
-	previewErr   string
-	previewID    string // SessionID currently shown in preview
-	previewReady bool
+	preview       []data.ConversationMessage
+	previewErr    string
+	previewID     string // SessionID currently shown in preview
+	previewReady  bool
+	previewScroll int    // Line offset for preview scrolling
+	previewLines  int    // Total rendered lines in preview
 
 	statusMsg string // Transient message in status bar
 	showHelp  bool
@@ -122,7 +124,7 @@ func searchMemCmd(client *data.ClaudeMemClient, query string) tea.Cmd {
 
 func loadPreviewCmd(path, sessionID string) tea.Cmd {
 	return func() tea.Msg {
-		msgs, err := data.ParseConversation(path, 50)
+		msgs, err := data.ParseConversation(path, 200)
 		return previewLoadedMsg{sessionID: sessionID, messages: msgs, err: err}
 	}
 }
@@ -238,6 +240,61 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.handleListKey(msg)
 	}
 
+	// Preview-specific (scrolling)
+	if a.focusedPane == PanePreview {
+		return a.handlePreviewKey(msg)
+	}
+
+	return a, nil
+}
+
+func (a *App) handlePreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	// Calculate visible height (same as in View)
+	visibleHeight := a.height - 1 - 1 - 2 - 4
+	if visibleHeight < 3 {
+		visibleHeight = 3
+	}
+	maxScroll := a.previewLines - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+
+	switch key {
+	case "down", "j":
+		if a.previewScroll < maxScroll {
+			a.previewScroll++
+		}
+	case "up", "k":
+		if a.previewScroll > 0 {
+			a.previewScroll--
+		}
+	case "g":
+		a.previewScroll = 0
+	case "G":
+		a.previewScroll = maxScroll
+	case "d":
+		// Half-page down
+		a.previewScroll += visibleHeight / 2
+		if a.previewScroll > maxScroll {
+			a.previewScroll = maxScroll
+		}
+	case "u":
+		// Half-page up
+		a.previewScroll -= visibleHeight / 2
+		if a.previewScroll < 0 {
+			a.previewScroll = 0
+		}
+	case "enter":
+		return a, a.resumeSession()
+	case "c":
+		return a, a.copyResumeCommand()
+	}
+
+	if msg.Type == tea.KeyEnter {
+		return a, a.resumeSession()
+	}
+
 	return a, nil
 }
 
@@ -351,6 +408,7 @@ func (a *App) loadPreviewForCursor() tea.Cmd {
 	a.previewID = s.SessionID
 	a.previewReady = false
 	a.previewErr = ""
+	a.previewScroll = 0
 	return loadPreviewCmd(s.FullPath, s.SessionID)
 }
 
@@ -511,8 +569,8 @@ func (a *App) renderPreview(width, height int) string {
 		}
 
 		content := msg.Content
-		if len(content) > width*3 {
-			content = content[:width*3] + "..."
+		if len(content) > width*4 {
+			content = content[:width*4] + "..."
 		}
 
 		lines = append(lines, style.Render(prefix)+wrapText(content, width-len(prefix)))
@@ -524,13 +582,40 @@ func (a *App) renderPreview(width, height int) string {
 		lines = append(lines, "")
 	}
 
+	// Flatten into actual lines (wrapText may have introduced newlines)
 	result := strings.Join(lines, "\n")
-	resultLines := strings.Split(result, "\n")
-	if len(resultLines) > height {
-		resultLines = resultLines[:height]
+	allLines := strings.Split(result, "\n")
+	a.previewLines = len(allLines)
+
+	// Apply scroll offset
+	scrollEnd := a.previewScroll + height
+	if a.previewScroll > len(allLines) {
+		a.previewScroll = len(allLines) - height
+		if a.previewScroll < 0 {
+			a.previewScroll = 0
+		}
+	}
+	if scrollEnd > len(allLines) {
+		scrollEnd = len(allLines)
+	}
+	visible := allLines[a.previewScroll:scrollEnd]
+
+	// Add scroll indicator on the last line if there's more content below
+	if scrollEnd < len(allLines) && len(visible) > 0 {
+		indicator := dimStyle.Render(fmt.Sprintf("── ↓ %d more lines (j/d scroll, G end) ──", len(allLines)-scrollEnd))
+		visible[len(visible)-1] = indicator
+	}
+	// Show indicator if scrolled down from top
+	if a.previewScroll > 0 && len(visible) > 0 {
+		indicator := dimStyle.Render(fmt.Sprintf("── ↑ %d lines above (k/u scroll, g top) ──", a.previewScroll))
+		visible[0] = indicator
 	}
 
-	return strings.Join(resultLines, "\n")
+	for len(visible) < height {
+		visible = append(visible, "")
+	}
+
+	return strings.Join(visible, "\n")
 }
 
 // renderHelp renders the help overlay.
@@ -539,8 +624,10 @@ func (a *App) renderHelp() string {
   ClaudeLens — Key Bindings
 
   Navigation
-    ↑/k        Move up
-    ↓/j        Move down
+    ↑/k        Move up / scroll preview up
+    ↓/j        Move down / scroll preview down
+    d/u        Half-page down/up (preview)
+    g/G        Top/bottom of preview
     Tab        Toggle list/preview focus
     Enter      Resume selected session
     c          Copy resume command to clipboard
