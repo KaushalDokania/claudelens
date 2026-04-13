@@ -236,10 +236,14 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (a *App) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	switch key {
-	case "enter":
+
+	// Handle Enter by type (Warp sends different key codes)
+	if msg.Type == tea.KeyEnter || key == "enter" {
 		a.focusedPane = PaneList
 		return a, nil
+	}
+
+	switch key {
 	case "esc":
 		a.searchQuery = ""
 		a.focusedPane = PaneList
@@ -283,7 +287,6 @@ func (a *App) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if a.cursor > 0 {
 			a.cursor--
-			// Skip separator
 			if isSeparator(a.filtered, a.memSessions, a.cursor) && a.cursor > 0 {
 				a.cursor--
 			}
@@ -292,7 +295,6 @@ func (a *App) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		if a.cursor < total-1 {
 			a.cursor++
-			// Skip separator
 			if isSeparator(a.filtered, a.memSessions, a.cursor) && a.cursor < total-1 {
 				a.cursor++
 			}
@@ -302,6 +304,12 @@ func (a *App) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.resumeSession()
 	case "c":
 		return a, a.copyResumeCommand()
+	}
+
+	// Warp terminal and some others may send Return as a different key type.
+	// Check by type as well as string representation.
+	if msg.Type == tea.KeyEnter {
+		return a, a.resumeSession()
 	}
 
 	return a, nil

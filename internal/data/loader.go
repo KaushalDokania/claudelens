@@ -1,6 +1,7 @@
 package data
 
 import (
+	"bufio"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,7 +12,7 @@ import (
 
 // sessionIndexFile represents the structure of sessions-index.json.
 type sessionIndexFile struct {
-	Version int                `json:"version"`
+	Version int                 `json:"version"`
 	Entries []sessionIndexEntry `json:"entries"`
 }
 
@@ -39,8 +40,11 @@ type activeSessionFile struct {
 }
 
 // LoadSessions loads all Claude Code sessions from the local filesystem.
-// It merges data from sessions-index.json files across all projects with
-// active session metadata (which may contain /rename names).
+// It combines data from two sources:
+//  1. sessions-index.json files (may be stale)
+//  2. JSONL files on disk (always current — the primary source)
+//
+// Sessions found via JSONL scan take priority since the index can be stale.
 func LoadSessions(claudeDir string) ([]Session, error) {
 	if claudeDir == "" {
 		home, err := os.UserHomeDir()
@@ -51,7 +55,24 @@ func LoadSessions(claudeDir string) ([]Session, error) {
 	}
 
 	namesByID := loadActiveSessionNames(claudeDir)
-	sessions := loadFromIndexFiles(claudeDir, namesByID)
+	indexSessions := loadFromIndexFiles(claudeDir, namesByID)
+	jsonlSessions := loadFromJSONLFiles(claudeDir, namesByID)
+
+	// Merge: JSONL-discovered sessions take priority, index fills gaps
+	seen := make(map[string]bool)
+	var sessions []Session
+
+	for _, s := range jsonlSessions {
+		seen[s.SessionID] = true
+		sessions = append(sessions, s)
+	}
+
+	for _, s := range indexSessions {
+		if seen[s.SessionID] {
+			continue
+		}
+		sessions = append(sessions, s)
+	}
 
 	sort.Slice(sessions, func(i, j int) bool {
 		return sessions[i].Modified.After(sessions[j].Modified)
@@ -72,12 +93,12 @@ func loadActiveSessionNames(claudeDir string) map[string]string {
 	}
 
 	for _, f := range files {
-		data, err := os.ReadFile(f)
+		raw, err := os.ReadFile(f)
 		if err != nil {
 			continue
 		}
 		var active activeSessionFile
-		if err := json.Unmarshal(data, &active); err != nil {
+		if err := json.Unmarshal(raw, &active); err != nil {
 			continue
 		}
 		if active.SessionID != "" && active.Name != "" {
@@ -86,6 +107,221 @@ func loadActiveSessionNames(claudeDir string) map[string]string {
 	}
 
 	return names
+}
+
+// loadFromJSONLFiles scans all project directories for JSONL conversation files
+// and extracts session metadata by reading the first few lines of each file.
+// This is the primary discovery method since sessions-index.json can be stale.
+func loadFromJSONLFiles(claudeDir string, namesByID map[string]string) []Session {
+	var sessions []Session
+
+	projectsDir := filepath.Join(claudeDir, "projects")
+	projectDirs, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return sessions
+	}
+
+	for _, pd := range projectDirs {
+		if !pd.IsDir() {
+			continue
+		}
+
+		// Skip internal/plugin session directories
+		if isInternalProjectDir(pd.Name()) {
+			continue
+		}
+
+		dirPath := filepath.Join(projectsDir, pd.Name())
+		jsonlFiles, err := filepath.Glob(filepath.Join(dirPath, "*.jsonl"))
+		if err != nil {
+			continue
+		}
+
+		projectPath := decodeProjectDirName(pd.Name())
+
+		for _, jsonlPath := range jsonlFiles {
+			base := filepath.Base(jsonlPath)
+			sessionID := strings.TrimSuffix(base, ".jsonl")
+
+			// Skip non-UUID filenames
+			if len(sessionID) < 36 {
+				continue
+			}
+
+			info, err := os.Stat(jsonlPath)
+			if err != nil {
+				continue
+			}
+
+			s := Session{
+				SessionID:   sessionID,
+				FullPath:    jsonlPath,
+				ProjectPath: projectPath,
+				Project:     extractProjectName(projectPath),
+				Modified:    info.ModTime(),
+				Source:      "jsonl",
+			}
+
+			if name, ok := namesByID[sessionID]; ok {
+				s.Name = name
+			}
+
+			// Extract metadata from the first few lines
+			extractJSONLMetadata(jsonlPath, &s)
+
+			sessions = append(sessions, s)
+		}
+	}
+
+	return sessions
+}
+
+// jsonlMetaLine is used to extract metadata from the first lines of a JSONL file.
+type jsonlMetaLine struct {
+	Type      string `json:"type"`
+	SessionID string `json:"sessionId"`
+	Timestamp string `json:"timestamp"`
+	GitBranch string `json:"gitBranch"`
+	Message   struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	} `json:"message"`
+}
+
+// extractJSONLMetadata reads the first few lines of a JSONL file to extract
+// summary, first prompt, message count estimate, and creation time.
+func extractJSONLMetadata(path string, s *Session) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 256*1024), 2*1024*1024)
+
+	lineCount := 0
+	maxScanLines := 30 // Only read first 30 lines for speed
+
+	for scanner.Scan() && lineCount < maxScanLines {
+		lineCount++
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		var entry jsonlMetaLine
+		if err := json.Unmarshal(line, &entry); err != nil {
+			continue
+		}
+
+		// Set creation time from first timestamped entry
+		if s.Created.IsZero() && entry.Timestamp != "" {
+			s.Created = parseTime(entry.Timestamp)
+		}
+
+		// Capture git branch
+		if s.GitBranch == "" && entry.GitBranch != "" {
+			s.GitBranch = entry.GitBranch
+		}
+
+		// Capture first user message as the prompt/summary
+		if s.FirstPrompt == "" && entry.Message.Role == "user" {
+			s.FirstPrompt = extractTextFromContent(entry.Message.Content)
+			if len(s.FirstPrompt) > 200 {
+				s.FirstPrompt = s.FirstPrompt[:200]
+			}
+		}
+
+		// Capture first assistant message for summary
+		if s.Summary == "" && entry.Message.Role == "assistant" {
+			text := extractTextFromContent(entry.Message.Content)
+			if len(text) > 120 {
+				text = text[:120]
+			}
+			s.Summary = text
+		}
+	}
+
+	// Estimate message count from file size (rough: ~2KB per message average)
+	if info, err := os.Stat(path); err == nil {
+		s.MessageCount = int(info.Size() / 2048)
+		if s.MessageCount < 1 {
+			s.MessageCount = 1
+		}
+	}
+}
+
+// extractTextFromContent extracts plain text from a message content field,
+// which can be a string or an array of content blocks.
+func extractTextFromContent(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	var plainText string
+	if err := json.Unmarshal(raw, &plainText); err == nil {
+		return strings.TrimSpace(plainText)
+	}
+
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		for _, b := range blocks {
+			if b.Type == "text" && b.Text != "" {
+				return strings.TrimSpace(b.Text)
+			}
+		}
+	}
+
+	return ""
+}
+
+// decodeProjectDirName converts a Claude Code project directory name back to
+// the original path. Claude encodes paths like "/Users/kaushal/workspace" as
+// "-Users-kaushal-workspace".
+func decodeProjectDirName(dirName string) string {
+	if dirName == "" {
+		return ""
+	}
+	// Replace leading dash with /
+	path := "/" + strings.TrimPrefix(dirName, "-")
+	// Replace remaining dashes with /
+	// But be careful: multi-word directory names use dashes too.
+	// Claude uses dashes for path separators, so we reconstruct by
+	// checking which path actually exists on disk.
+	parts := strings.Split(strings.TrimPrefix(dirName, "-"), "-")
+	reconstructed := "/" + parts[0]
+	for i := 1; i < len(parts); i++ {
+		withSep := reconstructed + "/" + parts[i]
+		withDash := reconstructed + "-" + parts[i]
+		if dirExists(withSep) {
+			reconstructed = withSep
+		} else if dirExists(withDash) {
+			reconstructed = withDash
+		} else {
+			// Default to path separator
+			reconstructed = withSep
+		}
+	}
+
+	_ = path
+	return reconstructed
+}
+
+// isInternalProjectDir returns true for project directories that contain
+// internal/plugin sessions (not user-initiated conversations).
+func isInternalProjectDir(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.Contains(lower, "observer-sessions") ||
+		strings.Contains(lower, "claude-mem")
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // loadFromIndexFiles reads all sessions-index.json files under the projects
@@ -101,13 +337,13 @@ func loadFromIndexFiles(claudeDir string, namesByID map[string]string) []Session
 	}
 
 	for _, indexFile := range indexFiles {
-		data, err := os.ReadFile(indexFile)
+		raw, err := os.ReadFile(indexFile)
 		if err != nil {
 			continue
 		}
 
 		var idx sessionIndexFile
-		if err := json.Unmarshal(data, &idx); err != nil {
+		if err := json.Unmarshal(raw, &idx); err != nil {
 			continue
 		}
 
@@ -148,7 +384,6 @@ func loadFromIndexFiles(claudeDir string, namesByID map[string]string) []Session
 }
 
 // extractProjectName returns a short project name from the full path.
-// For paths like "/Users/user/workspace/my-project", returns "my-project".
 func extractProjectName(projectPath string) string {
 	if projectPath == "" {
 		return ""
