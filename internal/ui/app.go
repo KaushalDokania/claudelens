@@ -610,6 +610,12 @@ func (a *App) renderPreview(width, height int) string {
 
 	var lines []string
 	for _, msg := range a.preview {
+		// Timestamp + role header
+		ts := ""
+		if !msg.Timestamp.IsZero() {
+			ts = dimStyle.Render(msg.Timestamp.Local().Format("15:04")) + " "
+		}
+
 		var prefix string
 		var style lipgloss.Style
 		if msg.Role == "user" {
@@ -620,12 +626,14 @@ func (a *App) renderPreview(width, height int) string {
 			style = assistMsgStyle
 		}
 
+		lines = append(lines, ts+style.Render(prefix))
+
 		content := msg.Content
 		if len(content) > width*4 {
 			content = content[:width*4] + "..."
 		}
 
-		lines = append(lines, style.Render(prefix)+wrapText(content, width-len(prefix)))
+		lines = append(lines, wrapText(content, width-2))
 
 		for _, tc := range msg.ToolCalls {
 			lines = append(lines, toolCallStyle.Render("  "+tc))
