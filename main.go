@@ -26,7 +26,7 @@ func main() {
 	}
 
 	app := ui.NewApp(*claudeDir, *memURL, *search)
-	p := tea.NewProgram(app, tea.WithAltScreen())
+	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	model, err := p.Run()
 	if err != nil {

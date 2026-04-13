@@ -177,6 +177,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.statusMsg = ""
 		return a, nil
 
+	case tea.MouseMsg:
+		return a.handleMouse(msg)
+
 	case tea.KeyMsg:
 		return a.handleKey(msg)
 	}
@@ -293,6 +296,55 @@ func (a *App) handlePreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if msg.Type == tea.KeyEnter {
 		return a, a.resumeSession()
+	}
+
+	return a, nil
+}
+
+func (a *App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	scrollLines := 3
+
+	// Determine which pane the mouse is over based on X position
+	listWidth := a.width*2/5 - 2
+	onPreview := msg.X > listWidth+3
+	total := totalItems(a.filtered, a.memSessions)
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if onPreview {
+			a.previewScroll -= scrollLines
+			if a.previewScroll < 0 {
+				a.previewScroll = 0
+			}
+		} else {
+			if a.cursor > 0 {
+				a.cursor--
+				if isSeparator(a.filtered, a.memSessions, a.cursor) && a.cursor > 0 {
+					a.cursor--
+				}
+				return a, a.loadPreviewForCursor()
+			}
+		}
+	case tea.MouseButtonWheelDown:
+		if onPreview {
+			visibleHeight := a.height - 1 - 1 - 2 - 4
+			maxScroll := a.previewLines - visibleHeight
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			a.previewScroll += scrollLines
+			if a.previewScroll > maxScroll {
+				a.previewScroll = maxScroll
+			}
+		} else {
+			if a.cursor < total-1 {
+				a.cursor++
+				if isSeparator(a.filtered, a.memSessions, a.cursor) && a.cursor < total-1 {
+					a.cursor++
+				}
+				return a, a.loadPreviewForCursor()
+			}
+		}
 	}
 
 	return a, nil
