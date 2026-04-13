@@ -160,6 +160,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case resumeMsg:
+		return a, tea.Quit
+
 	case statusSetMsg:
 		a.statusMsg = msg.text
 		return a, clearStatusAfter(3 * time.Second)
@@ -347,6 +350,9 @@ func (a *App) loadPreviewForCursor() tea.Cmd {
 	return loadPreviewCmd(s.FullPath, s.SessionID)
 }
 
+// resumeMsg is sent after a successful resume to quit the TUI.
+type resumeMsg struct{}
+
 func (a *App) resumeSession() tea.Cmd {
 	s := sessionAtCursor(a.filtered, a.memSessions, a.cursor)
 	if s == nil {
@@ -359,7 +365,7 @@ func (a *App) resumeSession() tea.Cmd {
 		if err != nil {
 			return statusSetMsg{text: fmt.Sprintf("Error: %v", err)}
 		}
-		return statusSetMsg{text: "Opened in new tab"}
+		return resumeMsg{}
 	}
 }
 
