@@ -610,33 +610,37 @@ func (a *App) renderPreview(width, height int) string {
 
 	var lines []string
 	for _, msg := range a.preview {
-		// Timestamp + role header
+		// Timestamp
 		ts := ""
 		if !msg.Timestamp.IsZero() {
-			ts = dimStyle.Render(msg.Timestamp.Local().Format("15:04")) + " "
+			ts = timestampStyle.Render(msg.Timestamp.Local().Format("15:04"))
 		}
 
-		var prefix string
-		var style lipgloss.Style
 		if msg.Role == "user" {
-			prefix = "You: "
-			style = userMsgStyle
+			// Claude Code style: ❯ prompt with cyan-blue color
+			header := userMsgStyle.Render("❯ ") + ts
+			lines = append(lines, header)
+
+			content := msg.Content
+			if len(content) > width*4 {
+				content = content[:width*4] + "..."
+			}
+			lines = append(lines, userMsgStyle.Render(wrapText(content, width-2)))
 		} else {
-			prefix = "Claude: "
-			style = assistMsgStyle
+			// Assistant: clean text, no prefix (like Claude Code output)
+			header := assistMsgStyle.Render("  ") + ts
+			lines = append(lines, header)
+
+			content := msg.Content
+			if len(content) > width*4 {
+				content = content[:width*4] + "..."
+			}
+			lines = append(lines, wrapText(content, width-2))
 		}
 
-		lines = append(lines, ts+style.Render(prefix))
-
-		content := msg.Content
-		if len(content) > width*4 {
-			content = content[:width*4] + "..."
-		}
-
-		lines = append(lines, wrapText(content, width-2))
-
+		// Tool calls with ⏺ indicator (like Claude Code)
 		for _, tc := range msg.ToolCalls {
-			lines = append(lines, toolCallStyle.Render("  "+tc))
+			lines = append(lines, toolIconStyle.Render("  ⏺ ")+toolCallStyle.Render(tc))
 		}
 
 		lines = append(lines, "")

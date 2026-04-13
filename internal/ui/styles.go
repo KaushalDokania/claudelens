@@ -7,11 +7,15 @@ var (
 	accentColor = lipgloss.AdaptiveColor{Light: "#7D56F4", Dark: "#AD8CFF"}
 	dimColor    = lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"}
 	textColor   = lipgloss.AdaptiveColor{Light: "#333333", Dark: "#DDDDDD"}
-	userColor   = lipgloss.AdaptiveColor{Light: "#2E86AB", Dark: "#82CFFF"}
-	assistColor = lipgloss.AdaptiveColor{Light: "#A23B72", Dark: "#FF8CCF"}
-	toolColor   = lipgloss.AdaptiveColor{Light: "#888888", Dark: "#555555"}
 	sepColor    = lipgloss.AdaptiveColor{Light: "#CCCCCC", Dark: "#444444"}
 	hlBg        = lipgloss.AdaptiveColor{Light: "#E8E0FF", Dark: "#3A2D6B"}
+
+	// Claude Code-inspired preview colors
+	userPromptColor = lipgloss.AdaptiveColor{Light: "#0077B6", Dark: "#56B6F7"} // Cyan-blue like Claude's ❯
+	assistTextColor = lipgloss.AdaptiveColor{Light: "#333333", Dark: "#D4D4D4"} // Default text
+	toolIconColor   = lipgloss.AdaptiveColor{Light: "#B8860B", Dark: "#E5A84B"} // Amber for tool calls
+	toolLabelColor  = lipgloss.AdaptiveColor{Light: "#666666", Dark: "#888888"} // Dim for tool details
+	tsColor         = lipgloss.AdaptiveColor{Light: "#AAAAAA", Dark: "#555555"} // Very dim for timestamps
 )
 
 var (
@@ -34,16 +38,22 @@ var (
 	dimStyle = lipgloss.NewStyle().
 			Foreground(dimColor)
 
+	// Preview styles — designed to match Claude Code CLI appearance
 	userMsgStyle = lipgloss.NewStyle().
-			Foreground(userColor).
+			Foreground(userPromptColor).
 			Bold(true)
 
 	assistMsgStyle = lipgloss.NewStyle().
-			Foreground(assistColor)
+			Foreground(assistTextColor)
 
 	toolCallStyle = lipgloss.NewStyle().
-			Foreground(toolColor).
-			Italic(true)
+			Foreground(toolLabelColor)
+
+	toolIconStyle = lipgloss.NewStyle().
+			Foreground(toolIconColor)
+
+	timestampStyle = lipgloss.NewStyle().
+			Foreground(tsColor)
 
 	separatorStyle = lipgloss.NewStyle().
 			Foreground(sepColor)
