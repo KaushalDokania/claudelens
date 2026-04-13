@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"time"
 
 	"github.com/atotto/clipboard"
 )
@@ -68,31 +67,17 @@ func detectTerminal() string {
 }
 
 func openWarpTab(sessionID, projectPath string) error {
-	// Warp URL scheme: open new tab, then send the command
-	// First open a new tab
-	err := exec.Command("open", "warp://action/new_tab").Run()
-	if err != nil {
-		return err
-	}
-	// Give Warp a moment to create the tab
-	time.Sleep(500 * time.Millisecond)
-
-	// Use AppleScript to type the command in the new Warp tab
+	// Copy the full command to clipboard first
 	var command string
 	if projectPath != "" {
 		command = fmt.Sprintf("cd '%s' && claude --resume %s", projectPath, sessionID)
 	} else {
 		command = fmt.Sprintf("claude --resume %s", sessionID)
 	}
+	_ = clipboard.WriteAll(command)
 
-	script := fmt.Sprintf(`tell application "System Events"
-	tell process "Warp"
-		keystroke "%s"
-		key code 36
-	end tell
-end tell`, command)
-
-	return exec.Command("osascript", "-e", script).Run()
+	// Open a new Warp tab
+	return exec.Command("open", "warp://action/new_tab").Run()
 }
 
 func openITerm2Tab(sessionID, projectPath string) error {

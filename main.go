@@ -42,10 +42,16 @@ func main() {
 
 	cmd := terminal.BuildResumeCommand(a.ResumeSessionID, a.ResumeProjectPath)
 
-	// Try to open in a new terminal tab first
+	// Try to open in a new terminal tab
+	term := terminal.DetectedTerminal()
 	err = terminal.ResumeInNewTab(a.ResumeSessionID, a.ResumeProjectPath)
 	if err == nil {
-		fmt.Printf("\n  Opened in new %s tab.\n\n", terminal.DetectedTerminal())
+		if term == "warp" {
+			fmt.Printf("\n  New Warp tab opened. Paste (Cmd+V) to run:\n\n")
+			fmt.Printf("    %s\n\n", cmd)
+		} else {
+			fmt.Printf("\n  Resuming in new %s tab.\n\n", term)
+		}
 		return
 	}
 
