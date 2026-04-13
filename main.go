@@ -42,26 +42,14 @@ func main() {
 
 	cmd := terminal.BuildResumeCommand(a.ResumeSessionID, a.ResumeProjectPath)
 
-	// Try to open in a new terminal tab
-	term := terminal.DetectedTerminal()
+	// Try to open in a new terminal tab (works for iTerm2, Terminal.app, tmux)
 	err = terminal.ResumeInNewTab(a.ResumeSessionID, a.ResumeProjectPath)
 	if err == nil {
-		if term == "warp" {
-			fmt.Printf("\n  New Warp tab opened. Paste (Cmd+V) to run:\n\n")
-			fmt.Printf("    %s\n\n", cmd)
-		} else {
-			fmt.Printf("\n  Resuming in new %s tab.\n\n", term)
-		}
+		fmt.Printf("\n  Resuming in new %s tab.\n\n", terminal.DetectedTerminal())
 		return
 	}
 
-	// Fallback: print the command and copy to clipboard
+	// Fallback for Warp and unsupported terminals: print + clipboard
 	_ = terminal.CopyResumeCommand(a.ResumeSessionID)
-	fmt.Println()
-	fmt.Println("  Run this command to resume your session:")
-	fmt.Println()
-	fmt.Printf("    %s\n", cmd)
-	fmt.Println()
-	fmt.Println("  (copied to clipboard)")
-	fmt.Println()
+	fmt.Printf("\n  Paste (Cmd+V) and run:\n\n    %s\n\n", cmd)
 }

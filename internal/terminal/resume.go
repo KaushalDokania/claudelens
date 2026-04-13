@@ -18,8 +18,6 @@ func ResumeInNewTab(sessionID, projectPath string) error {
 	}
 
 	switch detectTerminal() {
-	case "warp":
-		return openWarpTab(sessionID, projectPath)
 	case "iterm2":
 		return openITerm2Tab(sessionID, projectPath)
 	case "tmux":
@@ -64,20 +62,6 @@ func detectTerminal() string {
 		return "terminal"
 	}
 	return "unknown"
-}
-
-func openWarpTab(sessionID, projectPath string) error {
-	// Copy the full command to clipboard first
-	var command string
-	if projectPath != "" {
-		command = fmt.Sprintf("cd '%s' && claude --resume %s", projectPath, sessionID)
-	} else {
-		command = fmt.Sprintf("claude --resume %s", sessionID)
-	}
-	_ = clipboard.WriteAll(command)
-
-	// Open a new Warp tab
-	return exec.Command("open", "warp://action/new_tab").Run()
 }
 
 func openITerm2Tab(sessionID, projectPath string) error {
