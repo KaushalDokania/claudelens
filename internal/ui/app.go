@@ -43,8 +43,9 @@ type App struct {
 	statusMsg string // Transient message in status bar
 	showHelp  bool
 
-	claudeDir    string // Path to ~/.claude
-	ResumeCmd    string // Set on resume — printed after TUI exits
+	claudeDir         string // Path to ~/.claude
+	ResumeSessionID   string // Set on resume — used after TUI exits
+	ResumeProjectPath string // Project directory for the resumed session
 }
 
 // Messages
@@ -162,7 +163,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case resumeMsg:
-		a.ResumeCmd = msg.command
+		a.ResumeSessionID = msg.sessionID
+		a.ResumeProjectPath = msg.projectPath
 		return a, tea.Quit
 
 	case statusSetMsg:
@@ -352,9 +354,10 @@ func (a *App) loadPreviewForCursor() tea.Cmd {
 	return loadPreviewCmd(s.FullPath, s.SessionID)
 }
 
-// resumeMsg carries the command to print after the TUI exits.
+// resumeMsg carries session info for resuming after the TUI exits.
 type resumeMsg struct {
-	command string
+	sessionID   string
+	projectPath string
 }
 
 func (a *App) resumeSession() tea.Cmd {
@@ -362,11 +365,8 @@ func (a *App) resumeSession() tea.Cmd {
 	if s == nil {
 		return nil
 	}
-	cmd := terminal.BuildResumeCommand(s.SessionID, s.ProjectPath)
-	// Copy to clipboard as a convenience
-	_ = terminal.CopyResumeCommand(s.SessionID)
 	return func() tea.Msg {
-		return resumeMsg{command: cmd}
+		return resumeMsg{sessionID: s.SessionID, projectPath: s.ProjectPath}
 	}
 }
 

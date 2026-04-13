@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/KaushalDokania/claudelens/internal/terminal"
 	"github.com/KaushalDokania/claudelens/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -32,14 +33,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	// If user selected a session to resume, print the command after TUI exits
-	if a, ok := model.(*ui.App); ok && a.ResumeCmd != "" {
-		fmt.Println()
-		fmt.Println("  Run this command to resume your session:")
-		fmt.Println()
-		fmt.Printf("    %s\n", a.ResumeCmd)
-		fmt.Println()
-		fmt.Println("  (also copied to clipboard)")
-		fmt.Println()
+	// If user selected a session to resume, handle it AFTER the TUI has exited
+	// (alt-screen is gone, terminal is back to normal)
+	a, ok := model.(*ui.App)
+	if !ok || a.ResumeSessionID == "" {
+		return
 	}
+
+	cmd := terminal.BuildResumeCommand(a.ResumeSessionID, a.ResumeProjectPath)
+
+	// Try to open in a new terminal tab first
+	err = terminal.ResumeInNewTab(a.ResumeSessionID, a.ResumeProjectPath)
+	if err == nil {
+		fmt.Printf("\n  Opened in new %s tab.\n\n", terminal.DetectedTerminal())
+		return
+	}
+
+	// Fallback: print the command and copy to clipboard
+	_ = terminal.CopyResumeCommand(a.ResumeSessionID)
+	fmt.Println()
+	fmt.Println("  Run this command to resume your session:")
+	fmt.Println()
+	fmt.Printf("    %s\n", cmd)
+	fmt.Println()
+	fmt.Println("  (copied to clipboard)")
+	fmt.Println()
 }
