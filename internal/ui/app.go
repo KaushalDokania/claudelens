@@ -3,8 +3,10 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/KaushalDokania/claudelens/internal/data"
+	"github.com/KaushalDokania/claudelens/internal/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -157,6 +159,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return a, nil
+
+	case statusSetMsg:
+		a.statusMsg = msg.text
+		return a, clearStatusAfter(3 * time.Second)
 
 	case statusClearMsg:
 		a.statusMsg = ""
@@ -328,13 +334,19 @@ func (a App) loadPreviewForCursor() tea.Cmd {
 }
 
 func (a App) resumeSession() tea.Cmd {
-	// Placeholder — will be implemented in Commit 7 (terminal/resume.go)
 	s := sessionAtCursor(a.filtered, a.memSessions, a.cursor)
 	if s == nil {
 		return nil
 	}
-	a.statusMsg = fmt.Sprintf("Resume: claude --resume %s", s.SessionID)
-	return tea.Quit
+	sessionID := s.SessionID
+	projectPath := s.ProjectPath
+	return func() tea.Msg {
+		err := terminal.ResumeInNewTab(sessionID, projectPath)
+		if err != nil {
+			return statusSetMsg{text: fmt.Sprintf("Error: %v", err)}
+		}
+		return statusSetMsg{text: "Opened in new tab"}
+	}
 }
 
 func (a App) copyResumeCommand() tea.Cmd {
@@ -342,9 +354,24 @@ func (a App) copyResumeCommand() tea.Cmd {
 	if s == nil {
 		return nil
 	}
-	// Placeholder — clipboard will be wired in Commit 7
-	a.statusMsg = fmt.Sprintf("Copied: claude --resume %s", s.SessionID)
-	return nil
+	sessionID := s.SessionID
+	return func() tea.Msg {
+		err := terminal.CopyResumeCommand(sessionID)
+		if err != nil {
+			return statusSetMsg{text: fmt.Sprintf("Copy failed: %v", err)}
+		}
+		return statusSetMsg{text: "Copied to clipboard!"}
+	}
+}
+
+type statusSetMsg struct {
+	text string
+}
+
+func clearStatusAfter(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg {
+		return statusClearMsg{}
+	})
 }
 
 // View renders the entire UI.
@@ -414,7 +441,12 @@ func (a App) View() string {
 	if len(a.memSessions) > 0 {
 		totalCount += len(a.memSessions)
 	}
-	status := renderStatusBar(a.width, a.memAvailable, a.semEnabled, totalCount)
+	var status string
+	if a.statusMsg != "" {
+		status = statusBarStyle.Render(a.statusMsg)
+	} else {
+		status = renderStatusBar(a.width, a.memAvailable, a.semEnabled, totalCount)
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, searchLine, content, status)
 }
