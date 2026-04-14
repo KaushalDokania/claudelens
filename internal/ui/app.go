@@ -565,7 +565,8 @@ func (a *App) View() string {
 
 	listPane := listBorder.Width(listWidth).Height(contentHeight).Render(listContent)
 	previewPane := previewBorder.Width(previewWidth).Height(contentHeight).Render(previewContent)
-	content := lipgloss.JoinHorizontal(lipgloss.Top, listPane, previewPane)
+	panesHeight := contentHeight + borderLines
+	content := clipToHeight(lipgloss.JoinHorizontal(lipgloss.Top, listPane, previewPane), panesHeight)
 
 	// Status bar
 	totalCount := len(a.filtered)
