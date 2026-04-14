@@ -552,20 +552,19 @@ func (a *App) View() string {
 		previewWidth = 20
 	}
 
-	listContent := renderSessionList(a.filtered, a.memSessions, a.cursor, listWidth, contentHeight)
-	previewContent := a.renderPreview(previewWidth, contentHeight)
+	listContent := clipToHeight(renderSessionList(a.filtered, a.memSessions, a.cursor, listWidth, contentHeight), contentHeight)
+	previewContent := clipToHeight(a.renderPreview(previewWidth, contentHeight), contentHeight)
 
-	var listPane, previewPane string
+	listBorder := inactivePaneBorder
+	previewBorder := inactivePaneBorder
 	if a.focusedPane == PaneList {
-		listPane = activePaneBorder.Width(listWidth).Height(contentHeight).Render(listContent)
-		previewPane = inactivePaneBorder.Width(previewWidth).Height(contentHeight).Render(previewContent)
+		listBorder = activePaneBorder
 	} else if a.focusedPane == PanePreview {
-		listPane = inactivePaneBorder.Width(listWidth).Height(contentHeight).Render(listContent)
-		previewPane = activePaneBorder.Width(previewWidth).Height(contentHeight).Render(previewContent)
-	} else {
-		listPane = inactivePaneBorder.Width(listWidth).Height(contentHeight).Render(listContent)
-		previewPane = inactivePaneBorder.Width(previewWidth).Height(contentHeight).Render(previewContent)
+		previewBorder = activePaneBorder
 	}
+
+	listPane := listBorder.Width(listWidth).Height(contentHeight).Render(listContent)
+	previewPane := previewBorder.Width(previewWidth).Height(contentHeight).Render(previewContent)
 
 	content := lipgloss.JoinHorizontal(lipgloss.Top, listPane, previewPane)
 
@@ -582,7 +581,7 @@ func (a *App) View() string {
 		status = renderStatusBar(a.width, selectedSession, a.memAvailable, a.semEnabled, totalCount, a.focusedPane)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, searchLine, content, status)
+	return lipgloss.JoinVertical(lipgloss.Left, header, searchLine, content, clipToHeight(status, statusHeight))
 }
 
 // renderPreview renders the right pane with conversation preview.
@@ -721,6 +720,19 @@ func (a *App) renderHelp() string {
 		Render(help)
 
 	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, styled)
+}
+
+// clipToHeight ensures a string has exactly `height` lines.
+// Truncates if too many, pads with empty lines if too few.
+func clipToHeight(s string, height int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // formatDate returns a human-friendly date string.
