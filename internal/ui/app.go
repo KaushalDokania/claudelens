@@ -609,7 +609,18 @@ func (a *App) renderPreview(width, height int) string {
 	}
 
 	var lines []string
+	var lastDate string
 	for _, msg := range a.preview {
+		// Date separator — show when the date changes between messages
+		if !msg.Timestamp.IsZero() {
+			msgDate := formatDate(msg.Timestamp.Local())
+			if msgDate != lastDate {
+				lastDate = msgDate
+				dateLine := separatorStyle.Render(fmt.Sprintf("── %s ──", msgDate))
+				lines = append(lines, "", dateLine, "")
+			}
+		}
+
 		// Timestamp
 		ts := ""
 		if !msg.Timestamp.IsZero() {
@@ -714,6 +725,27 @@ func (a *App) renderHelp() string {
 		Render(help)
 
 	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, styled)
+}
+
+// formatDate returns a human-friendly date string.
+func formatDate(t time.Time) string {
+	now := time.Now().Local()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	msgDay := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+
+	diff := today.Sub(msgDay)
+	switch {
+	case diff < 0:
+		return t.Format("Mon, Jan 2")
+	case diff == 0:
+		return "Today"
+	case diff <= 24*time.Hour:
+		return "Yesterday"
+	case diff <= 7*24*time.Hour:
+		return t.Format("Monday")
+	default:
+		return t.Format("Mon, Jan 2, 2006")
+	}
 }
 
 // wrapText wraps text to fit within the given width.
