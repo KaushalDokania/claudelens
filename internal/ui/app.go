@@ -516,10 +516,9 @@ func (a *App) View() string {
 		return clipToHeight(a.renderHelp(), a.height)
 	}
 
-	// Fixed layout: header(1) + search(1) + bordered panes(contentH+2) + status(2)
-	borderLines := 2 // top + bottom border of rounded box
+	// Fixed layout: header(1) + search(1) + top border(1) + content(N) + bottom border(1) + status(2)
 	statusHeight := 2
-	contentHeight := a.height - 1 - 1 - borderLines - statusHeight
+	contentHeight := a.height - 1 - 1 - 1 - 1 - statusHeight
 
 	if contentHeight < 3 {
 		contentHeight = 3
@@ -539,8 +538,9 @@ func (a *App) View() string {
 	searchLine := searchStyle.Render(fmt.Sprintf("%sSearch: %s_", searchPrefix, a.searchQuery))
 
 	// Content panes — list gets 1/3, preview gets 2/3
-	listWidth := a.width/3 - 2
-	previewWidth := a.width - listWidth - 6
+	// Reserve: 1 border left + 1 pad + content + 1 border mid + 1 pad + content + 1 border right = 5 chrome chars
+	listWidth := a.width/3 - 3
+	previewWidth := a.width - listWidth - 5
 	if listWidth < 20 {
 		listWidth = 20
 	}
@@ -548,31 +548,17 @@ func (a *App) View() string {
 		previewWidth = 20
 	}
 
-	listContent := clipToHeight(
+	listLines := strings.Split(clipToHeight(
 		renderSessionList(a.filtered, a.memSessions, a.cursor, listWidth, contentHeight),
-		contentHeight)
-	previewContent := clipToHeight(
+		contentHeight), "\n")
+	previewLines := strings.Split(clipToHeight(
 		a.renderPreview(previewWidth, contentHeight),
-		contentHeight)
+		contentHeight), "\n")
 
-	listBorder := inactivePaneBorder
-	previewBorder := inactivePaneBorder
-	if a.focusedPane == PaneList {
-		listBorder = activePaneBorder
-	} else if a.focusedPane == PanePreview {
-		previewBorder = activePaneBorder
-	}
-
-	listPane := listBorder.
-		Width(listWidth).MaxWidth(listWidth + 2).
-		Height(contentHeight).
-		Render(listContent)
-	previewPane := previewBorder.
-		Width(previewWidth).MaxWidth(previewWidth + 2).
-		Height(contentHeight).
-		Render(previewContent)
-	panesHeight := contentHeight + borderLines
-	content := clipToHeight(lipgloss.JoinHorizontal(lipgloss.Top, listPane, previewPane), panesHeight)
+	// Draw borders manually for pixel-perfect layout
+	listActive := a.focusedPane == PaneList
+	prevActive := a.focusedPane == PanePreview
+	content := drawSplitPane(listLines, previewLines, listWidth, previewWidth, contentHeight, listActive, prevActive)
 
 	// Status bar
 	totalCount := len(a.filtered)
@@ -732,6 +718,80 @@ func (a *App) renderHelp() string {
 		Render(help)
 
 	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, styled)
+}
+
+// drawSplitPane manually draws two content panes side by side with box borders.
+// This bypasses lipgloss layout entirely for deterministic line counts.
+func drawSplitPane(leftLines, rightLines []string, leftW, rightW, height int, leftActive, rightActive bool) string {
+	borderColor := sepColor
+	leftColor := borderColor
+	rightColor := borderColor
+	if leftActive {
+		leftColor = accentColor
+	}
+	if rightActive {
+		rightColor = accentColor
+	}
+
+	lb := lipgloss.NewStyle().Foreground(leftColor)
+	rb := lipgloss.NewStyle().Foreground(rightColor)
+
+	var out strings.Builder
+
+	// Top border
+	out.WriteString(lb.Render("╭"))
+	out.WriteString(lb.Render(strings.Repeat("─", leftW+1)))
+	out.WriteString(lb.Render("┬"))
+	out.WriteString(rb.Render(strings.Repeat("─", rightW+1)))
+	out.WriteString(rb.Render("╮"))
+	out.WriteString("\n")
+
+	// Content rows
+	for i := 0; i < height; i++ {
+		left := ""
+		if i < len(leftLines) {
+			left = leftLines[i]
+		}
+		right := ""
+		if i < len(rightLines) {
+			right = rightLines[i]
+		}
+
+		// Pad/truncate to exact width
+		left = padOrTruncate(left, leftW)
+		right = padOrTruncate(right, rightW)
+
+		out.WriteString(lb.Render("│"))
+		out.WriteString(" ")
+		out.WriteString(left)
+		out.WriteString(lb.Render("│"))
+		out.WriteString(" ")
+		out.WriteString(right)
+		out.WriteString(rb.Render("│"))
+		out.WriteString("\n")
+	}
+
+	// Bottom border
+	out.WriteString(lb.Render("╰"))
+	out.WriteString(lb.Render(strings.Repeat("─", leftW+1)))
+	out.WriteString(lb.Render("┴"))
+	out.WriteString(rb.Render(strings.Repeat("─", rightW+1)))
+	out.WriteString(rb.Render("╯"))
+
+	return out.String()
+}
+
+// padOrTruncate ensures a string has exactly `width` visible characters.
+func padOrTruncate(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w == width {
+		return s
+	}
+	if w > width {
+		return truncateLine(s, width)
+	}
+	// Pad with spaces
+	return s + strings.Repeat(" ", width-w)
 }
 
 // clipToHeight ensures a string has exactly `height` lines.

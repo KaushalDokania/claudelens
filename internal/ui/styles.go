@@ -71,14 +71,4 @@ var (
 			Padding(0, 1)
 
 	paneStyle = lipgloss.NewStyle()
-
-	activePaneBorder = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(accentColor).
-				PaddingLeft(1)
-
-	inactivePaneBorder = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(sepColor).
-				PaddingLeft(1)
 )
