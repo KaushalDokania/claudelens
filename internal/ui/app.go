@@ -506,20 +506,20 @@ func clearStatusAfter(d time.Duration) tea.Cmd {
 }
 
 // View renders the entire UI.
+// The output is always exactly a.height lines to prevent layout jitter.
 func (a *App) View() string {
 	if a.width == 0 {
 		return "Loading..."
 	}
 
 	if a.showHelp {
-		return a.renderHelp()
+		return clipToHeight(a.renderHelp(), a.height)
 	}
 
-	// Layout: header + search + (list | preview) + status bar (2 lines)
-	headerHeight := 1
-	searchHeight := 1
+	// Fixed layout: header(1) + search(1) + bordered panes(contentH+2) + status(2)
+	borderLines := 2 // top + bottom border of rounded box
 	statusHeight := 2
-	contentHeight := a.height - headerHeight - searchHeight - statusHeight - 4 // borders
+	contentHeight := a.height - 1 - 1 - borderLines - statusHeight
 
 	if contentHeight < 3 {
 		contentHeight = 3
@@ -528,23 +528,19 @@ func (a *App) View() string {
 	// Header
 	sessionCount := len(a.filtered)
 	termName := terminal.DetectedTerminal()
-	header := headerStyle.Render(fmt.Sprintf("ClaudeLens v0.1")) +
+	header := headerStyle.Render("ClaudeLens v0.1") +
 		dimStyle.Render(fmt.Sprintf("  %d sessions · %s", sessionCount, termName))
-	header = lipgloss.PlaceHorizontal(a.width, lipgloss.Left, header)
 
 	// Search bar
-	searchIndicator := ""
+	searchPrefix := "  "
 	if a.focusedPane == PaneSearch {
-		searchIndicator = "▸ "
-	} else {
-		searchIndicator = "  "
+		searchPrefix = "▸ "
 	}
-	searchLine := searchStyle.Render(fmt.Sprintf("%sSearch: %s_", searchIndicator, a.searchQuery))
+	searchLine := searchStyle.Render(fmt.Sprintf("%sSearch: %s_", searchPrefix, a.searchQuery))
 
 	// Content panes — list gets 1/3, preview gets 2/3
 	listWidth := a.width/3 - 2
-	previewWidth := a.width - listWidth - 6 // borders
-
+	previewWidth := a.width - listWidth - 6
 	if listWidth < 20 {
 		listWidth = 20
 	}
@@ -552,8 +548,12 @@ func (a *App) View() string {
 		previewWidth = 20
 	}
 
-	listContent := clipToHeight(renderSessionList(a.filtered, a.memSessions, a.cursor, listWidth, contentHeight), contentHeight)
-	previewContent := clipToHeight(a.renderPreview(previewWidth, contentHeight), contentHeight)
+	listContent := clipToHeight(
+		renderSessionList(a.filtered, a.memSessions, a.cursor, listWidth, contentHeight),
+		contentHeight)
+	previewContent := clipToHeight(
+		a.renderPreview(previewWidth, contentHeight),
+		contentHeight)
 
 	listBorder := inactivePaneBorder
 	previewBorder := inactivePaneBorder
@@ -565,7 +565,6 @@ func (a *App) View() string {
 
 	listPane := listBorder.Width(listWidth).Height(contentHeight).Render(listContent)
 	previewPane := previewBorder.Width(previewWidth).Height(contentHeight).Render(previewContent)
-
 	content := lipgloss.JoinHorizontal(lipgloss.Top, listPane, previewPane)
 
 	// Status bar
@@ -576,12 +575,15 @@ func (a *App) View() string {
 	selectedSession := sessionAtCursor(a.filtered, a.memSessions, a.cursor)
 	var status string
 	if a.statusMsg != "" {
-		status = statusBarStyle.Render("  "+a.statusMsg) + "\n" + dimStyle.Render("  ↑↓ Navigate · Enter Resume · c Copy · / Search · q Quit")
+		status = statusBarStyle.Render("  "+a.statusMsg) + "\n" +
+			dimStyle.Render("  ↑↓ Navigate · Enter Resume · c Copy · / Search · q Quit")
 	} else {
 		status = renderStatusBar(a.width, selectedSession, a.memAvailable, a.semEnabled, totalCount, a.focusedPane)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, searchLine, content, clipToHeight(status, statusHeight))
+	// Assemble and hard-clip to terminal height
+	full := lipgloss.JoinVertical(lipgloss.Left, header, searchLine, content, clipToHeight(status, statusHeight))
+	return clipToHeight(full, a.height)
 }
 
 // renderPreview renders the right pane with conversation preview.
