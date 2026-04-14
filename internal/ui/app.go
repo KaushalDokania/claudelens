@@ -657,32 +657,33 @@ func (a *App) renderPreview(width, height int) string {
 	allLines := strings.Split(result, "\n")
 	a.previewLines = len(allLines)
 
-	// Apply scroll offset
-	scrollEnd := a.previewScroll + height
-	if a.previewScroll > len(allLines) {
-		a.previewScroll = len(allLines) - height
-		if a.previewScroll < 0 {
-			a.previewScroll = 0
+	// Clamp scroll offset
+	maxScroll := len(allLines) - height
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if a.previewScroll > maxScroll {
+		a.previewScroll = maxScroll
+	}
+	if a.previewScroll < 0 {
+		a.previewScroll = 0
+	}
+
+	// Extract exactly `height` lines
+	visible := make([]string, height)
+	for i := 0; i < height; i++ {
+		srcIdx := a.previewScroll + i
+		if srcIdx < len(allLines) {
+			visible[i] = allLines[srcIdx]
 		}
 	}
-	if scrollEnd > len(allLines) {
-		scrollEnd = len(allLines)
-	}
-	visible := allLines[a.previewScroll:scrollEnd]
 
-	// Add scroll indicator on the last line if there's more content below
-	if scrollEnd < len(allLines) && len(visible) > 0 {
-		indicator := dimStyle.Render(fmt.Sprintf("── ↓ %d more lines (j/d scroll, G end) ──", len(allLines)-scrollEnd))
-		visible[len(visible)-1] = indicator
+	// Overlay scroll indicators on first/last lines
+	if a.previewScroll > 0 {
+		visible[0] = dimStyle.Render(fmt.Sprintf("── ↑ %d lines above ──", a.previewScroll))
 	}
-	// Show indicator if scrolled down from top
-	if a.previewScroll > 0 && len(visible) > 0 {
-		indicator := dimStyle.Render(fmt.Sprintf("── ↑ %d lines above (k/u scroll, g top) ──", a.previewScroll))
-		visible[0] = indicator
-	}
-
-	for len(visible) < height {
-		visible = append(visible, "")
+	if a.previewScroll+height < len(allLines) {
+		visible[height-1] = dimStyle.Render(fmt.Sprintf("── ↓ %d more lines ──", len(allLines)-a.previewScroll-height))
 	}
 
 	return strings.Join(visible, "\n")
