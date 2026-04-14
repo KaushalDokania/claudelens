@@ -781,17 +781,24 @@ func drawSplitPane(leftLines, rightLines []string, leftW, rightW, height int, le
 	return out.String()
 }
 
-// padOrTruncate ensures a string has exactly `width` visible characters.
+// padOrTruncate ensures a string renders at exactly `width` visible characters.
+// Uses lipgloss for ANSI-safe width handling and appends a reset to prevent
+// style leaking into border characters.
 func padOrTruncate(s string, width int) string {
-	w := lipgloss.Width(s)
-	if w == width {
-		return s
+	// lipgloss Width + MaxWidth handles ANSI sequences correctly
+	result := lipgloss.NewStyle().Width(width).MaxWidth(width).Render(s)
+	// lipgloss may word-wrap long content, producing multiple lines.
+	// Take only the first line to keep our grid intact.
+	if idx := strings.Index(result, "\n"); idx >= 0 {
+		result = result[:idx]
+		// Re-pad since truncation at \n may leave it short
+		w := lipgloss.Width(result)
+		if w < width {
+			result += strings.Repeat(" ", width-w)
+		}
 	}
-	if w > width {
-		return truncateLine(s, width)
-	}
-	// Pad with spaces
-	return s + strings.Repeat(" ", width-w)
+	// Append ANSI reset to prevent style leaking into border chars
+	return result + "\x1b[0m"
 }
 
 // clipToHeight ensures a string has exactly `height` lines.
