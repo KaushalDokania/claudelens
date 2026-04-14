@@ -565,11 +565,11 @@ func (a *App) View() string {
 
 	listPane := listBorder.
 		Width(listWidth).MaxWidth(listWidth + 2).
-		Height(contentHeight).MaxHeight(contentHeight).
+		Height(contentHeight).
 		Render(listContent)
 	previewPane := previewBorder.
 		Width(previewWidth).MaxWidth(previewWidth + 2).
-		Height(contentHeight).MaxHeight(contentHeight).
+		Height(contentHeight).
 		Render(previewContent)
 	panesHeight := contentHeight + borderLines
 	content := clipToHeight(lipgloss.JoinHorizontal(lipgloss.Top, listPane, previewPane), panesHeight)
