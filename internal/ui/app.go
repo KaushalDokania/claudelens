@@ -563,8 +563,14 @@ func (a *App) View() string {
 		previewBorder = activePaneBorder
 	}
 
-	listPane := listBorder.Width(listWidth).Height(contentHeight).Render(listContent)
-	previewPane := previewBorder.Width(previewWidth).Height(contentHeight).Render(previewContent)
+	listPane := listBorder.
+		Width(listWidth).MaxWidth(listWidth + 2).
+		Height(contentHeight).MaxHeight(contentHeight).
+		Render(listContent)
+	previewPane := previewBorder.
+		Width(previewWidth).MaxWidth(previewWidth + 2).
+		Height(contentHeight).MaxHeight(contentHeight).
+		Render(previewContent)
 	panesHeight := contentHeight + borderLines
 	content := clipToHeight(lipgloss.JoinHorizontal(lipgloss.Top, listPane, previewPane), panesHeight)
 
@@ -654,9 +660,12 @@ func (a *App) renderPreview(width, height int) string {
 		lines = append(lines, "")
 	}
 
-	// Flatten into actual lines (wrapText may have introduced newlines)
+	// Flatten into actual lines and truncate each to pane width
 	result := strings.Join(lines, "\n")
 	allLines := strings.Split(result, "\n")
+	for i, line := range allLines {
+		allLines[i] = truncateLine(line, width)
+	}
 	a.previewLines = len(allLines)
 
 	// Clamp scroll offset
@@ -736,6 +745,24 @@ func clipToHeight(s string, height int) string {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// truncateLine truncates a string to maxWidth visible characters.
+// Handles ANSI escape sequences by measuring visual width.
+func truncateLine(s string, maxWidth int) string {
+	w := lipgloss.Width(s)
+	if w <= maxWidth {
+		return s
+	}
+	// Brute force: trim runes until it fits
+	runes := []rune(s)
+	for len(runes) > 0 {
+		runes = runes[:len(runes)-1]
+		if lipgloss.Width(string(runes)) <= maxWidth {
+			return string(runes)
+		}
+	}
+	return ""
 }
 
 // formatDate returns a human-friendly date string.
