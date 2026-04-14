@@ -305,7 +305,7 @@ func (a *App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	scrollLines := 3
 
 	// Determine which pane the mouse is over based on X position
-	listWidth := a.width*2/5 - 2
+	listWidth := a.width/3 - 2
 	onPreview := msg.X > listWidth+3
 	total := totalItems(a.filtered, a.memSessions)
 
@@ -541,9 +541,9 @@ func (a *App) View() string {
 	}
 	searchLine := searchStyle.Render(fmt.Sprintf("%sSearch: %s_", searchIndicator, a.searchQuery))
 
-	// Content panes
-	listWidth := a.width*2/5 - 2
-	previewWidth := a.width - listWidth - 6 // borders + padding
+	// Content panes — list gets 1/3, preview gets 2/3
+	listWidth := a.width/3 - 2
+	previewWidth := a.width - listWidth - 6 // borders
 
 	if listWidth < 20 {
 		listWidth = 20
@@ -628,30 +628,25 @@ func (a *App) renderPreview(width, height int) string {
 		}
 
 		if msg.Role == "user" {
-			// Claude Code style: ❯ prompt with cyan-blue color
-			header := userMsgStyle.Render("❯ ") + ts
-			lines = append(lines, header)
+			lines = append(lines, userMsgStyle.Render("❯")+" "+ts)
 
 			content := msg.Content
 			if len(content) > width*4 {
 				content = content[:width*4] + "..."
 			}
-			lines = append(lines, userMsgStyle.Render(wrapText(content, width-2)))
+			lines = append(lines, userMsgStyle.Render(wrapText(content, width)))
 		} else {
-			// Assistant: clean text, no prefix (like Claude Code output)
-			header := assistMsgStyle.Render("  ") + ts
-			lines = append(lines, header)
+			lines = append(lines, ts)
 
 			content := msg.Content
 			if len(content) > width*4 {
 				content = content[:width*4] + "..."
 			}
-			lines = append(lines, wrapText(content, width-2))
+			lines = append(lines, wrapText(content, width))
 		}
 
-		// Tool calls with ⏺ indicator (like Claude Code)
 		for _, tc := range msg.ToolCalls {
-			lines = append(lines, toolIconStyle.Render("  ⏺ ")+toolCallStyle.Render(tc))
+			lines = append(lines, toolIconStyle.Render("⏺ ")+toolCallStyle.Render(tc))
 		}
 
 		lines = append(lines, "")
