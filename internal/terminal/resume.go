@@ -104,20 +104,23 @@ func detectTerminal() string {
 	return "unknown"
 }
 
-const warpLaunchConfigName = "claudelens_resume"
+const warpTabConfigName = "claudelens_resume"
 
-// openWarpTab resumes a session in Warp via a launch configuration — the one
-// Warp mechanism that can both open a tab AND run a command in it. Warp's
-// simpler automation surfaces can't do this: no AppleScript support, and the
-// warp:// new_tab/new_window actions accept only path=, never a command
-// (warpdotdev/warp#3959, #2110). Launch configs (warp://launch/<file>) run
-// their panes' `commands: [exec: ...]` automatically on open.
+// openWarpTab resumes a session in a new Warp TAB via a tab config — the one
+// Warp mechanism that can both open a tab in the active window AND run a
+// command in it. Warp's simpler automation surfaces can't do this: no
+// AppleScript support, and the warp:// new_tab/new_window actions accept
+// only path=, never a command (warpdotdev/warp#3959, #2110). Tab configs
+// (warp://tab_config/<name>, TOML in ~/.warp/tab_configs/) run their panes'
+// `commands` automatically and open as a tab in the active window by
+// default — Warp docs recommend them over the legacy launch configurations,
+// which always open a new window.
 //
 // A single fixed config file is overwritten per resume, so nothing
-// accumulates in ~/.warp/launch_configurations/. The full cd+resume command
-// is always copied to the clipboard first as a safety net; if writing or
-// launching the config fails, ErrWarpManualRun signals the caller to show
-// paste instructions instead.
+// accumulates in ~/.warp/tab_configs/. The full cd+resume command is always
+// copied to the clipboard first as a safety net; if writing or launching
+// the config fails, ErrWarpManualRun signals the caller to show paste
+// instructions instead.
 func openWarpTab(sessionID, projectPath string) error {
 	_ = clipboard.WriteAll(BuildResumeCommand(sessionID, projectPath))
 
@@ -126,7 +129,7 @@ func openWarpTab(sessionID, projectPath string) error {
 		return ErrWarpManualRun
 	}
 
-	cfgDir := filepath.Join(home, ".warp", "launch_configurations")
+	cfgDir := filepath.Join(home, ".warp", "tab_configs")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		return ErrWarpManualRun
 	}
@@ -136,26 +139,25 @@ func openWarpTab(sessionID, projectPath string) error {
 		cwd = home
 	}
 
-	// strconv.Quote produces double-quoted strings with backslash escapes,
-	// which YAML double-quoted scalars parse identically for paths/UUIDs.
-	config := fmt.Sprintf(`---
-name: %s
-windows:
-  - tabs:
-      - title: %s
-        layout:
-          cwd: %s
-          commands:
-            - exec: %s
-`, warpLaunchConfigName, strconv.Quote("claude resume"), strconv.Quote(cwd),
+	// strconv.Quote produces double-quoted strings with backslash escapes;
+	// TOML basic strings parse the same escapes for paths/UUIDs.
+	config := fmt.Sprintf(`name = %s
+title = "claude resume"
+
+[[panes]]
+id = "main"
+type = "terminal"
+directory = %s
+commands = [%s]
+`, strconv.Quote(warpTabConfigName), strconv.Quote(cwd),
 		strconv.Quote(fmt.Sprintf("claude --resume %s", sessionID)))
 
-	cfgPath := filepath.Join(cfgDir, warpLaunchConfigName+".yaml")
+	cfgPath := filepath.Join(cfgDir, warpTabConfigName+".toml")
 	if err := os.WriteFile(cfgPath, []byte(config), 0o644); err != nil {
 		return ErrWarpManualRun
 	}
 
-	uri := fmt.Sprintf("warp://launch/%s.yaml", warpLaunchConfigName)
+	uri := fmt.Sprintf("warp://tab_config/%s", warpTabConfigName)
 	if err := exec.Command("open", uri).Run(); err != nil {
 		return ErrWarpManualRun
 	}

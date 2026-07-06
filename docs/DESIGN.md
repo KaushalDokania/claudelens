@@ -111,7 +111,7 @@ Index-sourced sessions (`sessions-index.json`) get the same validation via
 
 | Terminal | Method |
 |----------|--------|
-| Warp | 1. In-place: `chdir` + `syscall.Exec` replaces the process with `claude --resume` in the current tab · 2. Fallback: launch config (`~/.warp/launch_configurations/claudelens_resume.yaml` + `warp://launch/`) auto-runs in a new window · 3. Fallback: clipboard |
+| Warp | 1. In-place: `chdir` + `syscall.Exec` replaces the process with `claude --resume` in the current tab · 2. Fallback: tab config (`~/.warp/tab_configs/claudelens_resume.toml` + `warp://tab_config/`) auto-runs in a new tab of the active window · 3. Fallback: clipboard |
 | iTerm2 | AppleScript new tab |
 | Terminal.app | AppleScript do script |
 | tmux | tmux new-window |
@@ -119,5 +119,17 @@ Index-sourced sessions (`sessions-index.json`) get the same validation via
 
 Warp constraints (why the ladder exists): no AppleScript support; the
 `warp://action/new_tab` URI accepts only `path=`, never a command
-(warpdotdev/warp#3959, #2110). Launch configurations are the one Warp
-mechanism whose `commands: [exec: ...]` run automatically.
+(warpdotdev/warp#3959, #2110). Tab configs are the one Warp mechanism
+whose `commands` run automatically in a tab of the active window (launch
+configurations do too, but always open a new window — Warp docs mark
+them legacy).
+
+## Multi-File Sessions
+
+Resuming a session from a different directory makes Claude Code write a
+new transcript file under that directory's encoded folder — one session
+ID can have files in several project folders, and a continuation file may
+never mention its own launch directory in any `cwd` line (Claude Code
+restores the previous session cwd on resume). `Session.PathVerified`
+records whether encode-matching succeeded; the loader dedupes by session
+ID keeping verified entries over fallbacks, then most recent.

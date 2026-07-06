@@ -40,10 +40,15 @@ go build -o claudelens .
 ```bash
 claudelens                            # Launch TUI
 claudelens --search "auth refactor"   # Pre-fill search query
+claudelens --resume <session-id>      # Resume by ID in a new tab, no picker
 claudelens --project myapp            # Filter to a specific project
 claudelens --recent 7d                # Only sessions from last 7 days
 claudelens --no-claude-mem            # Disable semantic search
 ```
+
+`--resume` is built for cloning workflows (e.g. Claude Code's `/branch`):
+it resolves the session's correct directory and opens it in a **separate**
+tab, never touching the shell it was invoked from.
 
 ## Key Bindings
 
@@ -71,7 +76,7 @@ HTTP API for richer semantic search across session history.
 | iTerm2 | Auto-runs in a new tab (AppleScript) |
 | Terminal.app | Auto-runs in a new window (AppleScript) |
 | tmux | Auto-runs in a new window (`tmux new-window`) |
-| Warp | Resumes **in the current tab** (process replacement); falls back to a launch-config window, then clipboard |
+| Warp | Resumes **in the current tab** (process replacement); falls back to a tab-config tab, then clipboard |
 | Other | Full `cd && claude --resume` command copied to clipboard |
 
 Warp has no AppleScript support and its `warp://` URI scheme can't execute
