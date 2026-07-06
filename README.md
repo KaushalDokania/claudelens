@@ -15,7 +15,10 @@ a specific past session — especially across multiple projects — is frustrati
   [claude-mem](https://www.npmjs.com/package/claude-mem)
 - **Cross-project browsing** — see sessions from all your projects in one view
 - **Conversation preview** — read the conversation before committing to a resume
-- **One-keypress resume** — opens a new terminal tab with the session loaded
+- **One-keypress resume** — session loads in a new tab (iTerm2, Terminal.app,
+  tmux) or right in the current tab (Warp)
+- **Worktree-aware** — resolves the directory Claude Code actually indexed the
+  session under, even when the session moved through git worktrees
 - **Clipboard copy** — grab the `claude --resume <id>` command if you prefer
 
 ## Installation
@@ -37,10 +40,15 @@ go build -o claudelens .
 ```bash
 claudelens                            # Launch TUI
 claudelens --search "auth refactor"   # Pre-fill search query
+claudelens --resume <session-id>      # Resume by ID in a new tab, no picker
 claudelens --project myapp            # Filter to a specific project
 claudelens --recent 7d                # Only sessions from last 7 days
 claudelens --no-claude-mem            # Disable semantic search
 ```
+
+`--resume` is built for cloning workflows (e.g. Claude Code's `/branch`):
+it resolves the session's correct directory and opens it in a **separate**
+tab, never touching the shell it was invoked from.
 
 ## Key Bindings
 
@@ -60,6 +68,29 @@ claudelens --no-claude-mem            # Disable semantic search
 ClaudeLens reads session data from Claude Code's local storage (`~/.claude/`)
 and optionally queries [claude-mem](https://www.npmjs.com/package/claude-mem)'s
 HTTP API for richer semantic search across session history.
+
+### Resume behavior by terminal
+
+| Terminal | Behavior |
+|----------|----------|
+| iTerm2 | Auto-runs in a new tab (AppleScript) |
+| Terminal.app | Auto-runs in a new window (AppleScript) |
+| tmux | Auto-runs in a new window (`tmux new-window`) |
+| Warp | Resumes **in the current tab** (process replacement); falls back to a tab-config tab, then clipboard |
+| Other | Full `cd && claude --resume` command copied to clipboard |
+
+Warp has no AppleScript support and its `warp://` URI scheme can't execute
+commands, so ClaudeLens replaces its own process with `claude --resume` in
+the session's directory instead — one keypress, no automation needed.
+
+### Resume directory resolution
+
+`claude --resume <id>` only finds a session when run from the directory whose
+encoded form matches the session's storage folder under `~/.claude/projects/`
+(every non-alphanumeric character becomes `-`). Sessions drift across
+directories mid-conversation (e.g. git worktrees), so ClaudeLens scans each
+session's recorded `cwd` values and picks the one that encodes to the actual
+storage folder — not just the first directory seen.
 
 ### Data Sources
 
