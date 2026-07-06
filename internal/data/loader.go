@@ -163,7 +163,7 @@ func loadFromJSONLFiles(claudeDir string, namesByID map[string]string) []Session
 			}
 
 			// Extract metadata from the first few lines
-			extractJSONLMetadata(jsonlPath, &s)
+			extractJSONLMetadata(jsonlPath, pd.Name(), &s)
 
 			sessions = append(sessions, s)
 		}
@@ -185,9 +185,38 @@ type jsonlMetaLine struct {
 	} `json:"message"`
 }
 
-// extractJSONLMetadata reads the first few lines of a JSONL file to extract
-// cwd (project path), first prompt, git branch, timestamps, and message count.
-func extractJSONLMetadata(path string, s *Session) {
+// encodeProjectPath reproduces Claude Code's path-to-project-folder-name
+// encoding: every character outside [A-Za-z0-9] becomes a literal hyphen.
+// Verified against real folders under ~/.claude/projects/ — the encoding
+// is lossy (many distinct paths can share a hyphen run), so it can only be
+// used to test forward candidates, never to decode a folder name back.
+func encodeProjectPath(path string) string {
+	var b strings.Builder
+	b.Grow(len(path))
+	for _, r := range path {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
+}
+
+// extractJSONLMetadata scans a JSONL file to extract project path, first
+// prompt, git branch, timestamps, and message count.
+//
+// Project path selection: a session can change cwd mid-conversation (e.g.
+// entering a git worktree), and the directory that matters for resuming is
+// whichever one Claude Code's storage actually encodes as encodedDir — not
+// necessarily the first cwd seen. So this scans cwd values (unbounded, with
+// early exit once a match is found) looking for one whose encoding matches
+// encodedDir, falling back to the most frequent cwd if none match.
+//
+// Other fields (prompt/summary/branch/created) only need the first
+// maxScanLines lines and stay on that fast path independent of cwd matching.
+func extractJSONLMetadata(path string, encodedDir string, s *Session) {
 	f, err := os.Open(path)
 	if err != nil {
 		return
@@ -197,10 +226,12 @@ func extractJSONLMetadata(path string, s *Session) {
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 256*1024), 2*1024*1024)
 
+	const maxScanLines = 30
 	lineCount := 0
-	maxScanLines := 30
+	cwdCounts := make(map[string]int)
+	projectPathMatched := false
 
-	for scanner.Scan() && lineCount < maxScanLines {
+	for scanner.Scan() {
 		lineCount++
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -212,37 +243,52 @@ func extractJSONLMetadata(path string, s *Session) {
 			continue
 		}
 
-		// Extract cwd (the real project path) — typically on line 2
-		if s.ProjectPath == "" && entry.CWD != "" {
-			s.ProjectPath = entry.CWD
-			s.Project = extractProjectName(entry.CWD)
-		}
-
-		// Set creation time from first timestamped entry
-		if s.Created.IsZero() && entry.Timestamp != "" {
-			s.Created = parseTime(entry.Timestamp)
-		}
-
-		// Capture git branch
-		if s.GitBranch == "" && entry.GitBranch != "" {
-			s.GitBranch = entry.GitBranch
-		}
-
-		// Capture first user message as the prompt/summary
-		if s.FirstPrompt == "" && entry.Message.Role == "user" {
-			s.FirstPrompt = extractTextFromContent(entry.Message.Content)
-			if len(s.FirstPrompt) > 200 {
-				s.FirstPrompt = s.FirstPrompt[:200]
+		if entry.CWD != "" {
+			cwdCounts[entry.CWD]++
+			if !projectPathMatched && encodeProjectPath(entry.CWD) == encodedDir {
+				s.ProjectPath = entry.CWD
+				s.Project = extractProjectName(entry.CWD)
+				projectPathMatched = true
 			}
 		}
 
-		// Capture first assistant message for summary
-		if s.Summary == "" && entry.Message.Role == "assistant" {
-			text := extractTextFromContent(entry.Message.Content)
-			if len(text) > 120 {
-				text = text[:120]
+		if lineCount <= maxScanLines {
+			if s.Created.IsZero() && entry.Timestamp != "" {
+				s.Created = parseTime(entry.Timestamp)
 			}
-			s.Summary = text
+			if s.GitBranch == "" && entry.GitBranch != "" {
+				s.GitBranch = entry.GitBranch
+			}
+			if s.FirstPrompt == "" && entry.Message.Role == "user" {
+				s.FirstPrompt = extractTextFromContent(entry.Message.Content)
+				if len(s.FirstPrompt) > 200 {
+					s.FirstPrompt = s.FirstPrompt[:200]
+				}
+			}
+			if s.Summary == "" && entry.Message.Role == "assistant" {
+				text := extractTextFromContent(entry.Message.Content)
+				if len(text) > 120 {
+					text = text[:120]
+				}
+				s.Summary = text
+			}
+		}
+
+		if projectPathMatched && lineCount > maxScanLines {
+			break
+		}
+	}
+
+	if !projectPathMatched {
+		bestCwd, bestCount := "", 0
+		for cwd, count := range cwdCounts {
+			if count > bestCount {
+				bestCwd, bestCount = cwd, count
+			}
+		}
+		if bestCwd != "" {
+			s.ProjectPath = bestCwd
+			s.Project = extractProjectName(bestCwd)
 		}
 	}
 
@@ -313,6 +359,8 @@ func loadFromIndexFiles(claudeDir string, namesByID map[string]string) []Session
 			continue
 		}
 
+		encodedDir := filepath.Base(filepath.Dir(indexFile))
+
 		for _, entry := range idx.Entries {
 			if entry.IsSidechain || seen[entry.SessionID] {
 				continue
@@ -326,7 +374,7 @@ func loadFromIndexFiles(claudeDir string, namesByID map[string]string) []Session
 				FullPath:     entry.FullPath,
 				GitBranch:    entry.GitBranch,
 				MessageCount: entry.MessageCount,
-				ProjectPath:  entry.ProjectPath,
+				ProjectPath:  resolveIndexProjectPath(entry, encodedDir),
 				Source:       "index",
 			}
 
@@ -334,7 +382,7 @@ func loadFromIndexFiles(claudeDir string, namesByID map[string]string) []Session
 				s.Name = name
 			}
 
-			s.Project = extractProjectName(entry.ProjectPath)
+			s.Project = extractProjectName(s.ProjectPath)
 			s.Created = parseTime(entry.Created)
 			s.Modified = parseTime(entry.Modified)
 
@@ -347,6 +395,45 @@ func loadFromIndexFiles(claudeDir string, namesByID map[string]string) []Session
 	}
 
 	return sessions
+}
+
+// resolveIndexProjectPath validates an index entry's projectPath the same way
+// the JSONL scan does: the resume directory must encode to the project folder
+// the session actually lives in. If the index value doesn't match, the entry's
+// JSONL file (when present) is scanned for a cwd that does. Falls back to the
+// index value — a possibly-wrong path still beats an empty one.
+func resolveIndexProjectPath(entry sessionIndexEntry, encodedDir string) string {
+	if entry.ProjectPath != "" && encodeProjectPath(entry.ProjectPath) == encodedDir {
+		return entry.ProjectPath
+	}
+	if match := findMatchingCwd(entry.FullPath, encodedDir); match != "" {
+		return match
+	}
+	return entry.ProjectPath
+}
+
+// findMatchingCwd scans a JSONL file for the first cwd value whose encoding
+// matches encodedDir. Returns "" if the file is unreadable or nothing matches.
+func findMatchingCwd(path, encodedDir string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 256*1024), 2*1024*1024)
+
+	for scanner.Scan() {
+		var entry jsonlMetaLine
+		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+			continue
+		}
+		if entry.CWD != "" && encodeProjectPath(entry.CWD) == encodedDir {
+			return entry.CWD
+		}
+	}
+	return ""
 }
 
 // extractProjectName returns a short project name from the full path.
