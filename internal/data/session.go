@@ -20,6 +20,11 @@ type Session struct {
 	Created      time.Time
 	Modified     time.Time
 	Source       string // "index", "claudemem"
+	// PathVerified is true when ProjectPath's encoding matches the storage
+	// folder the session file lives in — i.e. `claude --resume` run from
+	// ProjectPath is guaranteed to find this session. False means
+	// ProjectPath is a best-effort fallback that may not resolve.
+	PathVerified bool
 }
 
 // DisplayTitle returns the best available title for this session.

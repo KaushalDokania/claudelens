@@ -58,13 +58,27 @@ func LoadSessions(claudeDir string) ([]Session, error) {
 	indexSessions := loadFromIndexFiles(claudeDir, namesByID)
 	jsonlSessions := loadFromJSONLFiles(claudeDir, namesByID)
 
-	// Merge: JSONL-discovered sessions take priority, index fills gaps
+	// Merge: JSONL-discovered sessions take priority, index fills gaps.
+	// A session can have files in MULTIPLE project folders (resuming from a
+	// different directory makes Claude Code write a new transcript there),
+	// so dedupe by session ID keeping the best resume point: a verified
+	// ProjectPath beats an unverified fallback; among equals, most recent.
+	best := make(map[string]Session)
+	for _, s := range jsonlSessions {
+		cur, ok := best[s.SessionID]
+		if !ok || betterResumePoint(s, cur) {
+			best[s.SessionID] = s
+		}
+	}
+
 	seen := make(map[string]bool)
 	var sessions []Session
-
 	for _, s := range jsonlSessions {
+		if seen[s.SessionID] {
+			continue
+		}
 		seen[s.SessionID] = true
-		sessions = append(sessions, s)
+		sessions = append(sessions, best[s.SessionID])
 	}
 
 	for _, s := range indexSessions {
@@ -79,6 +93,15 @@ func LoadSessions(claudeDir string) ([]Session, error) {
 	})
 
 	return sessions, nil
+}
+
+// betterResumePoint reports whether a is a better entry than b for the same
+// session: verified directory resolution wins, then recency.
+func betterResumePoint(a, b Session) bool {
+	if a.PathVerified != b.PathVerified {
+		return a.PathVerified
+	}
+	return a.Modified.After(b.Modified)
 }
 
 // loadActiveSessionNames reads ~/.claude/sessions/*.json to build a map
@@ -248,6 +271,7 @@ func extractJSONLMetadata(path string, encodedDir string, s *Session) {
 			if !projectPathMatched && encodeProjectPath(entry.CWD) == encodedDir {
 				s.ProjectPath = entry.CWD
 				s.Project = extractProjectName(entry.CWD)
+				s.PathVerified = true
 				projectPathMatched = true
 			}
 		}
@@ -367,6 +391,7 @@ func loadFromIndexFiles(claudeDir string, namesByID map[string]string) []Session
 			}
 			seen[entry.SessionID] = true
 
+			projectPath, verified := resolveIndexProjectPath(entry, encodedDir)
 			s := Session{
 				SessionID:    entry.SessionID,
 				Summary:      entry.Summary,
@@ -374,7 +399,8 @@ func loadFromIndexFiles(claudeDir string, namesByID map[string]string) []Session
 				FullPath:     entry.FullPath,
 				GitBranch:    entry.GitBranch,
 				MessageCount: entry.MessageCount,
-				ProjectPath:  resolveIndexProjectPath(entry, encodedDir),
+				ProjectPath:  projectPath,
+				PathVerified: verified,
 				Source:       "index",
 			}
 
@@ -402,14 +428,14 @@ func loadFromIndexFiles(claudeDir string, namesByID map[string]string) []Session
 // the session actually lives in. If the index value doesn't match, the entry's
 // JSONL file (when present) is scanned for a cwd that does. Falls back to the
 // index value — a possibly-wrong path still beats an empty one.
-func resolveIndexProjectPath(entry sessionIndexEntry, encodedDir string) string {
+func resolveIndexProjectPath(entry sessionIndexEntry, encodedDir string) (string, bool) {
 	if entry.ProjectPath != "" && encodeProjectPath(entry.ProjectPath) == encodedDir {
-		return entry.ProjectPath
+		return entry.ProjectPath, true
 	}
 	if match := findMatchingCwd(entry.FullPath, encodedDir); match != "" {
-		return match
+		return match, true
 	}
-	return entry.ProjectPath
+	return entry.ProjectPath, false
 }
 
 // findMatchingCwd scans a JSONL file for the first cwd value whose encoding
